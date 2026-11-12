@@ -31,4 +31,5 @@ button:disabled { opacity:.5; }
 .st.failed, .st.rejected { color:var(--err); }
 .st.confirmed { color:var(--ok); }
 .toast { position:fixed; left:12px; right:12px; bottom:16px; max-width:456px; margin:0 auto; background:#111827; color:#fff; padding:14px; border-radius:12px; text-align:center; }
+#contracts .card h2 { color:var(--accent); }
 [hidden] { display:none !important; }

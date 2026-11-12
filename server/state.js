@@ -21,7 +21,7 @@ export const state = {
   txStatus: new Map(),
 };
 
-function addAccount(account, balance) {
+export function addAccount(account, balance) {
   state.accounts.set(account.address, account);
   state.nickIndex.set(account.nick.toLowerCase(), account.address);
   state.balances.set(account.address, balance);
@@ -68,13 +68,14 @@ export const listNicks = () =>
   [...state.accounts.values()].filter((a) => !a.system).map((a) => ({ nick: a.nick, address: a.address }));
 
 // System tx: never goes through the validator.
-export function createSystemTx(to, amount) {
+export function createSystemTx(to, amount, { from = SYSTEM.SISTEMA, call } = {}) {
   const tx = {
-    from: SYSTEM.SISTEMA, to, amount,
-    nonce: expectedNonce(SYSTEM.SISTEMA),
+    from, to, amount,
+    nonce: expectedNonce(from),
     timestamp: Date.now(),
     pubKey: '', signature: 'SISTEMA',
   };
+  if (call) tx.call = call;
   tx.hash = computeTxHash(tx);
   return tx;
 }

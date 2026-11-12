@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import * as wc from '../public/shared/wallet-crypto.js';
 import { state, events, SYSTEM, reset, registerWallet } from '../server/state.js';
 import { validateTx, submitTx } from '../server/validator.js';
+import { registerContract } from '../server/contracts/engine.js';
+
+registerContract({
+  address: '0xVTEST', name: 'ValidatorTest', init: () => ({}), methods: { vote() {} },
+  view: () => ({}), active: () => true,
+});
 
 async function makeWallet(nick, balance = 0) {
   const kp = await wc.generateKeyPair();
@@ -110,9 +116,23 @@ test('second tx exceeding available (confirmed - pending) is rejected', async ()
   assert.equal(submitTx(await makeTx(alice, { to: bob.address, amount: 30, nonce: 1 })).ok, true);
 });
 
-test('tx with well-formed call passes validation', async () => {
-  const tx = await makeTx(alice, { to: bob.address, call: { method: 'vote', args: [1] } });
+test('tx with well-formed call to a contract passes validation', async () => {
+  const tx = await makeTx(alice, { to: '0xVTEST', call: { method: 'vote', args: [1] } });
   assert.equal(validateTx(tx).ok, true);
+});
+
+test('call to a non-contract is rejected', async () => {
+  const tx = await makeTx(alice, { to: bob.address, call: { method: 'vote', args: [1] } });
+  assert.equal(reason(tx), 'El destinatario no es un contrato');
+});
+
+test('amount 0 is allowed only with a call; oversized call is rejected', async () => {
+  assert.equal(validateTx(await makeTx(alice, { to: '0xVTEST', amount: 0, call: { method: 'vote', args: [] } })).ok, true);
+  assert.equal(reason(await makeTx(alice, { to: '0xVTEST', amount: 0 })), 'Monto inválido');
+  assert.equal(reason(await makeTx(alice, { to: bob.address, amount: 0 })), 'Monto inválido');
+  assert.equal(reason(await makeTx(alice, { to: '0xVTEST', amount: -1, call: { method: 'vote', args: [] } })), 'Monto inválido');
+  const big = await makeTx(alice, { to: '0xVTEST', amount: 0, call: { method: 'vote', args: ['x'.repeat(600)] } });
+  assert.equal(reason(big), 'Llamada demasiado grande');
 });
 
 test('submitTx adds to mempool, marks pending and emits events', async () => {

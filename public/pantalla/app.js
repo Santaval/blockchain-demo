@@ -9,7 +9,7 @@ let mineIntervalMs = 0;
 let lastBlockAt = Date.now();
 let lastHeight = null;
 let state = null;
-const sig = { chain: null, mempool: null, panel: null };
+const sig = { chain: null, mempool: null, panel: null, logs: null };
 const freshBlocks = new Set();
 const freshTxs = new Set();
 
@@ -188,6 +188,24 @@ function panelNetwork(s, body) {
   body.append(detail, rank);
 }
 
+// Contract panels plug in here: PANEL_RENDERERS[panelName] = (state, body) => {...}.
+const PANEL_RENDERERS = {};
+
+const MAX_LOGS = 8;
+function renderContractLog(s) {
+  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+  const ul = $('contract-log');
+  ul.replaceChildren();
+  const logs = [...(s.contractLogs || [])].reverse().slice(0, MAX_LOGS); // newest first
+  if (!logs.length) return void ul.appendChild(el('li', 'empty', 'Sin actividad de contratos'));
+  for (const l of logs) {
+    const li = el('li', l.message.startsWith('Revertido') ? 'revert' : '');
+    li.appendChild(el('b', null, nick.get(l.contract) || l.contract));
+    li.append(l.message);
+    ul.appendChild(li);
+  }
+}
+
 function renderPanel(s) {
   const panel = PANEL_TITLES[s.panel] ? s.panel : 'qr';
   $('main-panel').dataset.panel = panel;
@@ -197,13 +215,14 @@ function renderPanel(s) {
   body.replaceChildren();
   if (panel === 'qr') panelWelcome(s, body);
   else if (panel === 'red') panelNetwork(s, body);
+  else if (PANEL_RENDERERS[panel]) PANEL_RENDERERS[panel](s, body);
   else body.appendChild(el('div', 'placeholder', 'Disponible en la fase 3'));
 }
 
 function render(s) {
   state = s;
   const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
-    s.accounts?.map((a) => a.nick + a.balance).join()].join('|') + publicUrl;
+    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length].join('|') + publicUrl;
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
   $('tamper-banner').hidden = !s.tampered;
   if (mining && !s.mining) setMining(null); // run aborted (tamper/restore/reset)
@@ -216,6 +235,8 @@ function render(s) {
   // Only rebuild DOM when something changed, so highlight animations are not restarted.
   const cSig = (s.chain || []).map((b, i) => b.hash + ((s.validity || [])[i]?.valid === false ? 'x' : '')).join();
   if (cSig !== sig.chain) { sig.chain = cSig; renderChain(s); }
+  const lSig = JSON.stringify(s.contractLogs || []) + (s.accounts || []).map((a) => a.address + a.nick).join();
+  if (lSig !== sig.logs) { sig.logs = lSig; renderContractLog(s); }
   const mSig = (s.mempool || []).map((t) => t.hash).join() + '|' + (s.accounts || []).map((a) => a.address + a.nick).join();
   if (mSig !== sig.mempool) { sig.mempool = mSig; renderMempool(s); }
 }
@@ -228,6 +249,13 @@ function tick() {
 setInterval(tick, 250);
 
 socket.on('state:full', render);
+socket.on('contract:log', (entry) => {
+  if (!state) return;
+  state.contractLogs = [...(state.contractLogs || []), entry].slice(-60);
+  sig.logs = null;
+  renderContractLog(state);
+  sig.logs = JSON.stringify(state.contractLogs) + (state.accounts || []).map((a) => a.address + a.nick).join();
+});
 socket.on('mempool:add', (tx) => {
   freshTxs.add(tx.hash);
   setTimeout(() => freshTxs.delete(tx.hash), 2000);

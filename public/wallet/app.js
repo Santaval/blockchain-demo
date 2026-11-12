@@ -158,7 +158,9 @@ function renderHistory() {
   }
   for (const h of state?.history || []) {
     const mine = h.from === state.address;
-    const label = mine ? `Enviaste a ${h.toNick || h.to}` : `Recibiste de ${h.fromNick || h.from}`;
+    let label = mine ? `Enviaste a ${h.toNick || h.to}` : `Recibiste de ${h.fromNick || h.from}`;
+    if (h.call) label = `Llamaste ${h.call.method} en ${h.toNick || h.to}`;
+    else if (h.internal) label = mine ? `Pagaste a ${h.toNick || h.to}` : `${h.fromNick || h.from} te pagó`;
     let st, cls = h.status;
     if (h.status === 'confirmed') st = `confirmada (bloque #${h.block})`;
     else if (h.status === 'failed') st = `fallida (${h.reason || 'sin motivo'})`;
@@ -177,6 +179,51 @@ function render() {
   $('height').textContent = state.height;
   renderNicks();
   renderHistory();
+  renderContracts();
+}
+
+// ---- Contracts ----
+// Per-contract card renderers: CARD_RENDERERS[address] = (container, contract) => {...}. Unknown ones show the name only.
+const CARD_RENDERERS = {};
+let contractsSig = null;
+
+function renderContracts() {
+  const active = (state?.contracts || []).filter((c) => c.active);
+  const sig = JSON.stringify(active);
+  if (sig === contractsSig) return; // keep inputs and focus while nothing changed
+  contractsSig = sig;
+  const root = $('contracts');
+  root.replaceChildren();
+  root.hidden = active.length === 0;
+  for (const c of active) {
+    const card = document.createElement('section');
+    card.className = 'card';
+    const title = document.createElement('h2');
+    title.textContent = c.name;
+    card.appendChild(title);
+    CARD_RENDERERS[c.address]?.(card, c);
+    root.appendChild(card);
+  }
+}
+
+// Builds, signs and submits a tx that calls a contract method. Returns the ack ({ ok, reason }).
+async function callContract(address, method, args = [], amount = 0) {
+  if (sending || !state) return { ok: false, reason: 'Espera un momento' };
+  sending = true;
+  try {
+    const nonce = localNonce ?? state.nonce;
+    const partial = await buildTx({ to: address, amount, nonce, call: { method, args }, pubKey: pubHex });
+    const tx = await signTx(privateKey, partial);
+    const res = await emitAck('tx:submit', tx);
+    if (res?.ok) { localNonce = nonce + 1; toast('Llamada enviada'); }
+    else toast(res?.reason || 'Llamada rechazada');
+    return res;
+  } catch (ex) {
+    toast('Error: ' + ex.message);
+    return { ok: false, reason: ex.message };
+  } finally {
+    sending = false;
+  }
 }
 
 // ---- Send ----

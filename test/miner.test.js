@@ -5,9 +5,14 @@ import * as wc from '../public/shared/wallet-crypto.js';
 import { MAX_TXS_PER_BLOCK } from '../server/config.js';
 import { state, events, SYSTEM, reset, registerWallet, getBalance, createSystemTx } from '../server/state.js';
 import { submitTx } from '../server/validator.js';
+import { registerContract } from '../server/contracts/engine.js';
 import { mineBlock, mineBlockAnimated, isMining, mineNow, validateChain, setDifficulty, getDifficulty, setMineInterval, getMineInterval, startMiner, stopMiner } from '../server/miner.js';
 
 setDifficulty(2);
+
+registerContract({
+  address: '0xMTEST', name: 'MinerTest', init: () => ({}), methods: { x() {} }, view: () => ({}), active: () => true,
+});
 
 async function makeWallet(nick) {
   const kp = await wc.generateKeyPair();
@@ -77,7 +82,7 @@ test('txs failing at apply stay in the block as failed, nonce still increments',
   const b = await makeWallet('Bob');
   mineBlock();
   const noFunds = await makeTx(a, { to: b.address, amount: 50 });
-  const withCall = await makeTx(a, { to: b.address, amount: 1, nonce: 1, call: { method: 'x', args: [] } });
+  const withCall = await makeTx(a, { to: '0xMTEST', amount: 1, nonce: 1, call: { method: 'x', args: [] } });
   assert.equal(submitTx(noFunds).ok, true);
   assert.equal(submitTx(withCall).ok, true);
   state.balances.set(a.address, 0);
@@ -87,7 +92,7 @@ test('txs failing at apply stay in the block as failed, nonce still increments',
   events.removeAllListeners('tx:failed');
   assert.equal(block.txs.length, 2);
   assert.deepEqual(state.txStatus.get(noFunds.hash), { status: 'failed', block: 2, reason: 'Saldo insuficiente' });
-  assert.equal(state.txStatus.get(withCall.hash).reason, 'Contratos no disponibles todavía');
+  assert.equal(state.txStatus.get(withCall.hash).reason, 'Saldo insuficiente');
   assert.equal(state.nonces.get(a.address), 2);
   assert.equal(getBalance(a.address), 0);
   assert.equal(failed.length, 2);

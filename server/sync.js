@@ -2,6 +2,7 @@
 import { state, events, registerWallet, getBalance, availableBalance, expectedNonce, listNicks } from './state.js';
 import { submitTx } from './validator.js';
 import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining, isTampered } from './miner.js';
+import { contractsView, contractsViewFor, getLogs, getInternalTransfers } from './contracts/engine.js';
 import { registerAdminHandlers, getPanel } from './admin.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
@@ -28,8 +29,9 @@ export function buildFullState() {
     chain: state.chain.slice(-CHAIN_WINDOW),
     validity: validity.slice(-CHAIN_WINDOW),
     mempool: state.mempool,
-    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, system: !!a.system, balance: num(getBalance(a.address)) })),
-    contracts: [],
+    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, system: !!a.system, balance: num(getBalance(a.address)), contract: !!a.contract })),
+    contracts: contractsView(),
+    contractLogs: getLogs(),
     participants: 0, // overwritten by attachSync (needs socket info)
     height: state.chain.length - 1,
     difficulty: getDifficulty(),
@@ -52,22 +54,30 @@ export function buildWalletState(address) {
   }
   const history = txs
     .map((t) => ({ t, st: state.txStatus.get(t.hash) ?? { status: 'pending' } }))
-    .sort((a, b) => b.t.timestamp - a.t.timestamp)
-    .slice(0, HISTORY_LIMIT)
     .map(({ t, st }) => {
       const item = {
         hash: t.hash, from: t.from, to: t.to, fromNick: nickOf(t.from), toNick: nickOf(t.to),
         amount: t.amount, timestamp: t.timestamp, status: st.status,
       };
+      if (t.call) item.call = t.call;
       if (st.block !== undefined) item.block = st.block;
       if (st.reason) item.reason = st.reason;
       return item;
     });
+  // Payouts/refunds made by contracts explain balance changes that did not come from the wallet's own txs.
+  const internal = getInternalTransfers()
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => t.from === address || t.to === address)
+    .map(({ t, i }) => ({
+      hash: `int-${t.tx}-${i}`, from: t.from, to: t.to, fromNick: nickOf(t.from), toNick: nickOf(t.to),
+      amount: t.amount, timestamp: t.time, status: 'confirmed', block: t.block, internal: true,
+    }));
+  const merged = [...history, ...internal].sort((a, b) => b.timestamp - a.timestamp).slice(0, HISTORY_LIMIT);
   return {
     address, nick: account.nick,
     balance: getBalance(address), available: availableBalance(address),
     nonce: expectedNonce(address), height: state.chain.length - 1,
-    history, nicks: listNicks(), contracts: [],
+    history: merged, nicks: listNicks(), contracts: contractsViewFor(address),
   };
 }
 
@@ -135,6 +145,10 @@ export function attachSync(io) {
         if (pendingProgress) io.to('pantalla').to('admin').emit('mine:progress', pendingProgress);
         pendingProgress = null;
       }, PROGRESS_MS);
+    },
+    'contract:log': (entry) => {
+      io.to('pantalla').to('admin').emit('contract:log', entry);
+      schedule();
     },
     'tx:confirmed': (tx, block) => notify([tx.from, tx.to], 'tx:confirmed', { hash: tx.hash, block }),
     'tx:failed': (tx, block, reason) => notify([tx.from, tx.to], 'tx:failed', { hash: tx.hash, block, reason }),
