@@ -1,26 +1,37 @@
 // Pantalla (projector): socket, state, signature-based re-render and event -> canvas token wiring.
 import { connect, bindStatus } from '/shared/socket.js';
-import { createGraph, el, LOOP_EDGE } from './graph.js';
+import { icon } from '/shared/icons.js';
+import { createGraph, el, LOOP_EDGE, BLOCK_WINDOW } from './graph.js';
 import {
-  PANEL_META, initPanels, setPublicUrl, getPublicUrl, renderPanelBody, tickAuction, tickLab,
+  PANEL_META, LOCAL_META, initPanels, setPublicUrl, getPublicUrl, renderPanelBody, renderLocalBody, paintPow, tickAuction,
   bankInit, bankEnqueue, bankOverride, isBankLog, BANK, ATTACKER,
 } from './panels.js';
+import { renderLabStage, initLabStage, tickLab, moveLabFocus, clearLabFocus } from './lab.js';
 
 const MAX_LOGS = 4;
 const MAX_CHIPS = 40;
 const CONTRACT_ORDER = ['0xVOTACION', '0xSUBASTA', BANK, ATTACKER];
 const PANEL_NODE = { qr: 'wallets', votacion: 'contract:0xVOTACION', subasta: 'contract:0xSUBASTA', banco: `contract:${BANK}`, pruebas: 'miner' };
+const CONTRACT_PANEL = { '0xVOTACION': 'votacion', '0xSUBASTA': 'subasta', [BANK]: 'banco', [ATTACKER]: 'banco' };
 const $ = (id) => document.getElementById(id);
 
 const socket = connect('pantalla');
 bindStatus(socket, $('status'));
-const graph = createGraph($('canvas'));
+const graph = createGraph($('canvas'), { onSelect: selectNode });
 
 let mineIntervalMs = 0;
 let lastBlockAt = Date.now();
 let lastHeight = null;
 let state = null;
-const sig = { panel: null, logs: null, strip: null };
+const sig = { panel: null, logs: null, strip: null, lab: null };
+
+// Local view: what the presenter opened by clicking a node. It wins over the panel chosen in the admin
+// until Esc / the back button, or until the admin picks another panel.
+//   { kind: 'block', index } | { kind: 'mempool' | 'miner' | 'wallets' } | { kind: 'panel', panel }
+let local = null;
+let serverPanel = null;
+let chainOffset = 0; // newest blocks scrolled out of the block row
+
 
 // Mining state machine: `mining` is the run in progress ({ index, difficulty, remine? }) or null.
 let mining = null;
@@ -60,6 +71,7 @@ function refreshMiner() {
   else if (state?.pool && !state.pool.enabled && state.miners?.length) sub = poolEta(state.pool); // miners have left by now; still show the lesson
   else sub = 'Esperando transacciones…';
   graph.setMiner({ sub, active: !!mining, nonce: miner.nonce, hash: miner.hash, hit: miner.hit });
+  paintPow(miner);
 }
 function minerHash(h, difficulty) {
   const zeros = (h.match(/^0*/) || [''])[0].length;
@@ -100,12 +112,81 @@ function syncGraph() {
     .map((c) => ({ address: c.address, name: c.name || c.address, figure: contractFigure(c) }));
   const chain = (s.chain || []).map((b, i) => {
     const v = (s.validity || [])[i];
-    return { index: b.index, hash: b.hash || '', nonce: b.nonce, txs: (b.txs || []).length, invalid: !!v && v.valid === false, reason: v?.reason };
+    return { index: b.index, hash: b.hash || '', prevHash: b.prevHash || '', nonce: b.nonce, txs: (b.txs || []).length, invalid: !!v && v.valid === false, reason: v?.reason };
   });
   const panel = PANEL_META[s.panel] ? s.panel : 'qr';
-  const selected = panel === 'red' ? (chain.length ? `block:${chain[chain.length - 1].index}` : null) : PANEL_NODE[panel];
-  graph.sync({ participants: s.participants ?? 0, pending: (s.mempool || []).length, chain, contracts, selected });
+  let selected = panel === 'red' ? (chain.length ? `block:${chain[chain.length - 1].index}` : null) : PANEL_NODE[panel];
+  if (local) selected = local.kind === 'block' ? `block:${local.index}` : local.kind === 'panel' ? local.node : local.kind;
+  chainOffset = Math.min(chainOffset, Math.max(0, chain.length - BLOCK_WINDOW));
+  graph.sync({ participants: s.participants ?? 0, pending: (s.mempool || []).length, chain, contracts, selected, offset: chainOffset });
+  renderChainNav(chain);
 }
+
+// ---------- block row navigation ----------
+
+function renderChainNav(chain) {
+  const total = chain.length;
+  const end = total - chainOffset;
+  const start = Math.max(0, end - BLOCK_WINDOW);
+  $('chain-nav').hidden = total <= BLOCK_WINDOW;
+  if (!total) return;
+  $('chain-range').textContent = `Bloques #${chain[start].index} a #${chain[end - 1].index}`;
+  $('chain-older').disabled = start === 0;
+  $('chain-newer').disabled = chainOffset === 0;
+  $('chain-tip').hidden = chainOffset === 0;
+}
+function scrollChain(delta) {
+  const total = (state?.chain || []).length;
+  chainOffset = Math.max(0, Math.min(Math.max(0, total - BLOCK_WINDOW), chainOffset + delta));
+  syncGraph();
+}
+$('chain-older').addEventListener('click', () => scrollChain(1));
+$('chain-newer').addEventListener('click', () => scrollChain(-1));
+$('chain-tip').addEventListener('click', () => scrollChain(-Infinity));
+
+// ---------- local views (click a node) ----------
+
+function setLocal(next) {
+  local = next;
+  if (next?.kind === 'block' && state) { // keep the picked block inside the visible row
+    const chain = state.chain || [];
+    const at = chain.findIndex((b) => b.index === next.index);
+    if (at >= 0) {
+      const fromTip = chain.length - 1 - at;
+      if (fromTip < chainOffset) chainOffset = fromTip;
+      else if (fromTip > chainOffset + BLOCK_WINDOW - 1) chainOffset = fromTip - (BLOCK_WINDOW - 1);
+    }
+  }
+  sig.panel = null;
+  if (state) render(state);
+}
+function selectNode(id) {
+  if (id.startsWith('block:')) return setLocal({ kind: 'block', index: Number(id.slice(6)) });
+  if (id.startsWith('contract:')) {
+    const panel = CONTRACT_PANEL[id.slice(9)];
+    return panel ? setLocal({ kind: 'panel', panel, node: id }) : undefined;
+  }
+  setLocal({ kind: id });
+}
+function stepBlock(delta) {
+  const chain = state?.chain || [];
+  if (!chain.length) return;
+  const at = local?.kind === 'block' ? chain.findIndex((b) => b.index === local.index) : chain.length - (delta < 0 ? 0 : 1);
+  const next = chain[Math.max(0, Math.min(chain.length - 1, at + delta))];
+  if (next) setLocal({ kind: 'block', index: next.index });
+}
+$('panel-back').addEventListener('click', () => setLocal(null));
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || !state) return;
+  const lab = shownPanel() === 'pruebas';
+  if (e.key === 'Escape') {
+    if (lab && !local) { clearLabFocus(); sig.lab = null; sig.panel = null; render(state); } else setLocal(null);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const delta = e.key === 'ArrowLeft' ? -1 : 1;
+    if (lab && !local) { moveLabFocus(state.lab, delta); sig.lab = null; sig.panel = null; render(state); } else stepBlock(delta);
+  } else return;
+  e.preventDefault();
+});
 
 // ---------- bottom strip ----------
 
@@ -142,22 +223,47 @@ function renderContractLog(s) {
 
 // ---------- panel ----------
 
-function renderPanel(s) {
-  const panel = PANEL_META[s.panel] ? s.panel : 'qr';
-  document.body.dataset.panel = panel; // the small QR in the top bar hides while the big one shows
-  $('main-panel-title').textContent = PANEL_META[panel].title;
-  $('panel-ic').textContent = PANEL_META[panel].icon;
-  const body = $('main-panel-body');
-  body.dataset.panel = panel;
-  renderPanelBody(panel, s, body);
+// Panel on screen: the admin's choice unless a local contract view replaced it.
+function shownPanel() {
+  const panel = PANEL_META[state?.panel] ? state.panel : 'qr';
+  return local?.kind === 'panel' ? local.panel : panel;
 }
+
+function renderPanel(s) {
+  const panel = shownPanel();
+  const view = local && local.kind !== 'panel' ? local.kind : null;
+  const meta = view ? LOCAL_META[view] : PANEL_META[panel];
+  document.body.dataset.panel = view ? `local-${view}` : panel; // the small QR in the top bar hides while the big one shows
+  $('main-panel-title').textContent = meta.title;
+  $('panel-ic').replaceChildren(icon(meta.icon));
+  $('panel-back').hidden = !local;
+  $('panel-hint').hidden = !!local || panel === 'pruebas';
+  const body = $('main-panel-body');
+  body.dataset.panel = view ? `local-${view}` : panel;
+  if (view) renderLocalBody(local, s, body);
+  else renderPanelBody(panel, s, body);
+}
+
+initLabStage($('lab-stage'), { getState: () => state, rerender: () => { sig.lab = null; sig.panel = null; if (state) render(state); } });
 
 // ---------- state ----------
 
 function render(s) {
   state = s;
   bankInit(s);
-  const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
+  if (s.panel !== serverPanel) { // the presenter moved on from the admin: drop whatever was opened by hand
+    if (serverPanel !== null) local = null;
+    serverPanel = s.panel;
+  }
+  const lab = shownPanel() === 'pruebas' && !(local && local.kind !== 'panel');
+  $('canvas').toggleAttribute('hidden', lab); // SVG elements have no .hidden property
+  $('logcard').hidden = lab;
+  $('lab-stage').hidden = !lab;
+  if (lab) {
+    const lSig = JSON.stringify(s.lab) + '|' + s.height + '|' + JSON.stringify((s.contracts || []).find((c) => c.address === BANK)?.view?.balance);
+    if (lSig !== sig.lab) { sig.lab = lSig; renderLabStage(s, $('lab-stage')); }
+  } else sig.lab = null;
+  const pSig = [JSON.stringify(local), s.difficulty, (s.mempool || []).map((t) => t.hash).join(), JSON.stringify(s.validity?.map((v) => v.valid)), s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
     s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length, JSON.stringify(s.miners), JSON.stringify(s.lab)].join('|') + getPublicUrl();
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
   $('tamper-chip').hidden = !s.tampered;

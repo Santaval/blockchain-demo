@@ -5,6 +5,7 @@
 //   { type: 'progress', id, text }
 //   { type: 'case', id, name, ok, detail }
 //   { type: 'summary', id, text }
+//   { type: 'viz', id, data }                       structured data for the projector scene (shallow-merged)
 //   { type: 'markers', id, addresses, txHashes }   things the fork created (the main thread checks they never leak)
 //   { type: 'suiteEnd', id, status: 'pass' | 'fail' }
 const PROGRESS_MIN_MS = 90;
@@ -15,6 +16,7 @@ export async function runSuite(suite, { report = () => {}, rng, pace = async () 
   const id = suite.id;
   const cases = [];
   let summary = '';
+  const viz = {};
   let lastProgressAt = 0;
   let pendingProgress = null;
 
@@ -43,6 +45,8 @@ export async function runSuite(suite, { report = () => {}, rng, pace = async () 
       return entry.ok;
     },
     summary(text) { summary = text; },
+    // Numbers and small lists the projector draws (bars, node votes, last operations). Shallow-merged.
+    viz(patch) { Object.assign(viz, patch); report({ type: 'viz', id, data: patch }); },
     mark({ addresses = [], txHashes = [] } = {}) { report({ type: 'markers', id, addresses, txHashes }); },
   };
 
@@ -59,5 +63,5 @@ export async function runSuite(suite, { report = () => {}, rng, pace = async () 
   if (summary) report({ type: 'summary', id, text: summary });
   const status = cases.length > 0 && cases.every((c) => c.ok) ? 'pass' : 'fail';
   report({ type: 'suiteEnd', id, status });
-  return { id, status, cases, summary };
+  return { id, status, cases, summary, viz };
 }

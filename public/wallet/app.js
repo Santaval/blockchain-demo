@@ -1,4 +1,5 @@
 import { connect, bindStatus } from '/shared/socket.js';
+import { icon } from '/shared/icons.js';
 import {
   generateKeyPair, exportPublicKeyHex, exportPrivateJwk, importPrivateJwk,
   addressFromPubKeyHex, buildTx, signTx,
@@ -144,14 +145,31 @@ function renderNicks() {
 
 const STATUS_CHIP = { pending: 'c-neutral blink', confirmed: 'c-ok', failed: 'c-bad', rejected: 'c-bad' };
 
-function histRow(cls, label, amount, status, statusCls) {
+// Life of a transaction as three dots: firmada -> en el mempool -> en un bloque.
+const STEPS = ['Firmada', 'Mempool', 'Bloque'];
+function lifeSteps(statusCls) {
+  const reached = { pending: 1, confirmed: 2, failed: 2, rejected: 0 }[statusCls] ?? 1;
+  const wrap = document.createElement('div');
+  wrap.className = 'life';
+  STEPS.forEach((name, i) => {
+    const step = document.createElement('span');
+    const bad = (statusCls === 'rejected' && i === 1) || (statusCls === 'failed' && i === 2);
+    step.className = bad ? 'bad' : i < reached || (i === reached && statusCls !== 'pending') ? 'done' : i === reached ? 'now' : '';
+    step.textContent = name;
+    wrap.appendChild(step);
+  });
+  return wrap;
+}
+
+function histRow(cls, label, amount, status, statusCls, steps = true) {
   const li = document.createElement('li');
   li.className = cls;
-  const ic = document.createElement('div'); ic.className = 'dir'; ic.textContent = cls === 'in' ? '↓' : '↑';
+  const ic = document.createElement('div'); ic.className = 'dir'; ic.appendChild(icon(cls === 'in' ? 'arrow-down' : 'arrow-up'));
   const left = document.createElement('div'); left.className = 'tx';
   const a = document.createElement('div'); a.className = 'who'; a.textContent = label;
   const s = document.createElement('span'); s.className = 'chip ' + (STATUS_CHIP[statusCls] || 'c-neutral'); s.textContent = status;
   left.append(a, s);
+  if (steps) left.appendChild(lifeSteps(statusCls));
   const amt = document.createElement('div'); amt.className = 'amt';
   amt.textContent = (cls === 'in' ? '+' : '-') + amount;
   li.append(ic, left, amt);
@@ -174,7 +192,7 @@ function renderHistory() {
     if (h.status === 'confirmed') st = `confirmada (bloque #${h.block})`;
     else if (h.status === 'failed') st = `fallida (${h.reason || 'sin motivo'})`;
     else st = 'pendiente';
-    ul.appendChild(histRow(mine ? 'out' : 'in', label, h.amount, st, cls));
+    ul.appendChild(histRow(mine ? 'out' : 'in', label, h.amount, st, cls, mine && !h.internal && !h.reward)); // only what this wallet signed
   }
   $('history-empty').hidden = ul.children.length > 0;
 }
@@ -236,7 +254,8 @@ function renderContracts() {
     section.className = 'card';
     const head = document.createElement('div');
     head.className = 'node small k-tool';
-    const ic = document.createElement('div'); ic.className = 'ic'; ic.textContent = '⚙';
+    const ic = document.createElement('div'); ic.className = 'ic';
+    ic.appendChild(icon({ '0xVOTACION': 'vote', '0xSUBASTA': 'tag', '0xBANCO': 'bank', '0xATACANTE': 'alert' }[c.address] || 'contract'));
     const tx = document.createElement('div'); tx.className = 'tx';
     const ttl = document.createElement('div'); ttl.className = 'ttl'; ttl.textContent = c.name;
     const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = c.address;

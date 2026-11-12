@@ -1,4 +1,5 @@
 import { connect, bindStatus } from '/shared/socket.js';
+import { icon } from '/shared/icons.js';
 
 const $ = (id) => document.getElementById(id);
 const PANELS = [['qr', 'QR'], ['red', 'Red'], ['votacion', 'Votación'], ['subasta', 'Subasta'], ['banco', 'Banco'], ['pruebas', 'Pruebas']];
@@ -35,11 +36,13 @@ function login(password, silent = false) {
       try { sessionStorage.setItem('admin.pw', password); } catch { /* storage unavailable */ }
       $('login').hidden = true;
       $('panel').hidden = false;
+      $('jump').hidden = false;
     } else {
       loggedIn = false;
       try { sessionStorage.removeItem('admin.pw'); } catch { /* storage unavailable */ }
       $('login').hidden = false;
       $('panel').hidden = true;
+      $('jump').hidden = true;
       if (!silent) toast(res?.reason || 'Error', false);
     }
   });
@@ -57,6 +60,16 @@ socket.on('connect', () => {
   if (pw) login(pw, true);
 });
 socket.on('disconnect', () => { loggedIn = false; });
+
+// Section shortcuts: one chip per card, sticky under the header.
+for (const section of document.querySelectorAll('#panel section[id]')) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'chip';
+  b.textContent = section.dataset.title;
+  b.addEventListener('click', () => section.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  $('jump').appendChild(b);
+}
 
 // Static controls
 const panelButtons = PANELS.map(([id, label]) => {
@@ -129,7 +142,7 @@ function renderTamper(s) {
     const ok = (s.validity || [])[i]?.valid !== false;
     const li = document.createElement('li');
     li.className = ok ? 'chip c-ok' : 'chip c-bad';
-    li.textContent = `${ok ? '✔' : '✖'} #${b.index}`;
+    li.append(icon(ok ? 'check' : 'x'), ` #${b.index}`);
     ul.appendChild(li);
   });
   const withTxs = chain.filter((b) => b.index > 0 && b.txs.length);
@@ -210,7 +223,8 @@ function renderBank(s) {
 
 // Pruebas: suite rows are rebuilt on each push (small list, text only).
 let lab = null;
-const STATUS_CHIP = { pending: ['pendiente', 'c-neutral'], running: ['corriendo', 'c-running'], pass: ['ok', 'c-ok'], fail: ['falló', 'c-bad'] };
+const STATUS_CHIP = { pending: ['pendiente', 'c-neutral'], running: ['corriendo', 'c-running'], pass: ['pasó', 'c-ok'], fail: ['falló', 'c-bad'] };
+const SUITE_ICON = { spec: 'clipboard', multicliente: 'copy', 'fuzz-red': 'shuffle', bft: 'shield', fork: 'fork', invariantes: 'scale' };
 function labRun(suite, label) {
   const raw = $('lab-seed-in').value.trim();
   const payload = { suite };
@@ -221,6 +235,7 @@ function labRun(suite, label) {
   });
 }
 $('lab-all').addEventListener('click', () => labRun('all', 'Corriendo todas'));
+$('lab-seed-again').addEventListener('click', () => { if (lab?.seed != null) $('lab-seed-in').value = String(lab.seed); });
 $('lab-clear').addEventListener('click', () => send('admin:lab-clear', {}, lab?.running ? 'Pruebas canceladas' : 'Pruebas limpiadas'));
 function renderLab(s) {
   lab = s.lab;
@@ -229,6 +244,7 @@ function renderLab(s) {
   $('lab-all').disabled = running;
   $('lab-clear').textContent = running ? 'Cancelar' : 'Limpiar';
   $('lab-seed').textContent = lab.seed != null ? String(lab.seed) : '-';
+  $('lab-seed-again').disabled = lab.seed == null;
   const st = $('lab-state');
   st.hidden = !running && !lab.finishedAt;
   st.className = running ? 'chip c-running' : 'chip c-neutral';
@@ -237,15 +253,18 @@ function renderLab(s) {
   ul.replaceChildren();
   for (const su of lab.suites || []) {
     const li = document.createElement('li');
+    const ic = document.createElement('span');
+    ic.className = 'sic';
+    ic.appendChild(icon(SUITE_ICON[su.id] || 'flask'));
     const nm = document.createElement('div');
     nm.className = 'nm';
     const b = document.createElement('b');
     b.textContent = su.name;
     const sm = document.createElement('small');
-    sm.textContent = `diap. ${su.slides}` + (su.status === 'running' && su.progress ? ` · ${su.progress}` : '');
-    nm.append(b, sm);
+    const done = su.status === 'pass' || su.status === 'fail';
+    sm.textContent = su.status === 'running' && su.progress ? su.progress : done && su.summary ? su.summary : `diap. ${su.slides}`;
     let [txt, cls] = STATUS_CHIP[su.status] || STATUS_CHIP.pending;
-    if (su.expectFail && su.status === 'fail') [txt, cls] = ['encontró el bug', 'c-ok'];
+    if (su.expectFail && su.status === 'fail') [txt, cls] = ['bug encontrado', 'c-ok'];
     const chip = document.createElement('span');
     chip.className = `chip ${cls}`;
     chip.textContent = txt;
@@ -255,7 +274,11 @@ function renderLab(s) {
     btn.textContent = 'Correr';
     btn.disabled = running;
     btn.addEventListener('click', () => labRun(su.id, su.name));
-    li.append(nm, chip, btn);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.append(chip, sm);
+    nm.append(b, meta);
+    li.append(ic, nm, btn);
     ul.appendChild(li);
   }
 }

@@ -161,6 +161,7 @@ export default {
       ...validation.map(([name, expect, fn]) => ({ kind: 'validación', name, expect, fn })),
       ...execution.map(([name, expect, fn]) => ({ kind: 'ejecución', name, expect, fn })),
     ];
+    ctx.viz({ vectors: vectors.map((v) => ({ kind: v.kind, name: v.name })) });
     let passed = 0;
     for (let i = 0; i < vectors.length; i++) {
       const v = vectors[i];

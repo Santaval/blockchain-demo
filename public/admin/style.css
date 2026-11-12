@@ -2,9 +2,20 @@
 body { padding-bottom: 5rem; font-size: 16px; }
 .top { display: flex; align-items: center; gap: 1em; padding: .6em 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .brand { flex: 1; font-weight: 750; font-size: 1.25em; display: flex; align-items: center; gap: .4em; }
-.logo { color: var(--accent); font-size: 1.2em; }
+.logo { color: var(--accent); font-size: 1.2em; display: inline-grid; }
+.top { position: sticky; top: 0; z-index: 6; }
+.top .btn.icon { width: 36px; height: 36px; color: var(--muted); }
 #status[data-connected="true"] { background: var(--ok-bg); color: var(--ok); }
 #status[data-connected="false"] { background: var(--bad-bg); color: var(--bad); }
+
+/* section shortcuts */
+.jump { position: sticky; top: 53px; z-index: 5; display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--border); scrollbar-width: none; }
+.jump::-webkit-scrollbar { display: none; }
+.jump .chip { flex: none; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-size: .85em; font-weight: 600; padding: 6px 12px; cursor: pointer; }
+section[id] { scroll-margin-top: 110px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.row .btn { width: auto; padding: 0 14px; }
+.validity .chip .icon { margin-right: 2px; }
 
 main, #login { max-width: 34rem; margin: 0 auto; padding: 0 16px; }
 #login { margin-top: 16px; }
@@ -44,9 +55,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .validity { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .toast.error { border-left-color: var(--bad); }
 
-.lab-suites { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.lab-suites li { display: flex; align-items: center; gap: 8px; min-height: 48px; }
-.lab-suites .nm { flex: 1; min-width: 0; }
-.lab-suites .nm b { display: block; overflow-wrap: anywhere; }
-.lab-suites .nm small { color: var(--muted); }
-.lab-suites .btn { width: auto; min-width: 76px; padding: 0 12px; }
+.lab-suites { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lab-suites li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.lab-suites li:first-child { border-top: 0; }
+.lab-suites .sic { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--panel-2); color: var(--accent); font-size: 17px; }
+.lab-suites .nm b { display: block; line-height: 1.2; font-size: .95em; }
+.lab-suites .meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; }
+.lab-suites .nm small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lab-suites .chip { font-size: .72em; flex: none; }
+.lab-suites .btn { width: auto; min-width: 0; padding: 0 12px; min-height: 40px; }

@@ -1,11 +1,13 @@
 // SVG workflow canvas: HTML node cards inside foreignObject, bezier edges and animated tokens.
 // Fixed logical viewBox (1600x760) that the browser fits to the stage; no pan or zoom.
+// Every node is clickable: createGraph(svg, { onSelect(id) }) reports which one, and the block row can show older blocks.
 // Nodes are persistent elements: they are only refilled when their key changes, so animations are not restarted.
+import { icon } from '/shared/icons.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_TOKENS = 40;
 const PENDING_TTL_MS = 3000;
-const BLOCK_WINDOW = 5; // newest block lands under the miner, clear of the contract column
+export const BLOCK_WINDOW = 5; // newest block lands under the miner, clear of the contract column
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 export function el(tag, cls, text) {
@@ -29,8 +31,9 @@ export function hashEl(h, len = 10) {
 const KINDS = ['trigger', 'source', 'step', 'ai', 'switch', 'tool', 'out', 'sink'];
 const BANK = '0xBANCO', ATTACKER = '0xATACANTE';
 export const LOOP_EDGE = `contract:${BANK}>contract:${ATTACKER}`;
+const CONTRACT_ICON = { '0xVOTACION': 'vote', '0xSUBASTA': 'tag', [BANK]: 'bank', [ATTACKER]: 'alert' };
 
-export function createGraph(svg) {
+export function createGraph(svg, { onSelect } = {}) {
   svg.innerHTML = `
     <defs>
       <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.5" class="grid-dot"/></pattern>
@@ -41,6 +44,10 @@ export function createGraph(svg) {
   const gEdges = svg.querySelector('.edges');
   const gNodes = svg.querySelector('.nodes');
   const gTokens = svg.querySelector('.tokens');
+  svg.addEventListener('click', (e) => {
+    const card = e.target.closest?.('.node');
+    if (card && onSelect) onSelect(card.dataset.node);
+  });
 
   const nodes = new Map(); // id -> { fo, el, parts, key, x, y, w, h }
   const edges = new Map(); // id -> { path, d, flow, used }
@@ -57,6 +64,7 @@ export function createGraph(svg) {
     const fo = document.createElementNS(SVG_NS, 'foreignObject');
     const card = el('div', 'node');
     card.dataset.node = id;
+    card.setAttribute('role', 'button');
     const ic = el('div', 'ic');
     const tx = el('div', 'tx');
     const ttl = el('div', 'ttl');
@@ -73,7 +81,7 @@ export function createGraph(svg) {
 
   function fillNode(n, d) {
     const { ic, ttl, sub, st, badge } = n.parts;
-    ic.textContent = d.icon;
+    if (ic.dataset.name !== d.icon) { ic.dataset.name = d.icon; ic.replaceChildren(icon(d.icon)); }
     ttl.textContent = d.title;
     badge.textContent = d.badge ?? '';
     if (!d.live) {
@@ -177,19 +185,23 @@ export function createGraph(svg) {
 
     const nPart = model.participants ?? 0;
     defs.set('wallets', {
-      x: 30, y: 125, w: 320, h: 130, kind: 'trigger', icon: '◉', title: 'Participantes',
+      x: 30, y: 125, w: 320, h: 130, kind: 'trigger', icon: 'users', title: 'Participantes',
       key: `p${nPart}`, sub: () => `${nPart} ${nPart === 1 ? 'conectado' : 'conectados'}`,
     });
     defs.set('mempool', {
-      x: 430, y: 125, w: 320, h: 130, kind: 'source', icon: '☰', title: 'Mempool',
+      x: 430, y: 125, w: 320, h: 130, kind: 'source', icon: 'layers', title: 'Mempool',
       key: `m${model.pending}`, badge: model.pending ? String(model.pending) : '',
       sub: () => 'transacciones en espera',
     });
-    defs.set('miner', { x: 830, y: 95, w: 400, h: 190, kind: 'ai', icon: '✦', title: 'Minero', key: 'miner', live: true });
+    defs.set('miner', { x: 830, y: 95, w: 400, h: 190, kind: 'ai', icon: 'pick', title: 'Minero', key: 'miner', live: true });
     specs.set('wallets>mempool', { from: 'wallets', to: 'mempool' });
     specs.set('mempool>miner', { from: 'mempool', to: 'miner' });
 
-    const chain = (model.chain || []).slice(-BLOCK_WINDOW);
+    // model.offset = how many of the newest blocks are scrolled out of view (0 shows the tip under the miner)
+    const all = model.chain || [];
+    const offset = Math.min(Math.max(0, model.offset || 0), Math.max(0, all.length - 1));
+    const end = all.length - offset;
+    const chain = all.slice(Math.max(0, end - BLOCK_WINDOW), end);
     const first = BLOCK_WINDOW - chain.length;
     let prevId = null, lastId = null;
     chain.forEach((b, i) => {
@@ -197,11 +209,14 @@ export function createGraph(svg) {
       const nTx = b.txs;
       defs.set(id, {
         x: 10 + (first + i) * 262, y: 520, w: 228, h: 220, kind: b.invalid ? 'sink' : 'out', block: true,
-        icon: b.invalid ? '✖' : '▣', title: b.index === 0 ? 'Génesis' : `#${b.index}`, badge: b.invalid ? '✖' : '',
-        key: [b.hash, b.nonce, nTx, b.invalid ? b.reason || 'x' : ''].join('|'),
-        sub: () => hashEl(b.hash || '', 8),
+        icon: b.invalid ? 'alert' : 'block', title: b.index === 0 ? 'Génesis' : `#${b.index}`, badge: b.invalid ? '!' : '',
+        key: [b.hash, b.prevHash, b.nonce, nTx, b.invalid ? b.reason || 'x' : ''].join('|'),
+        sub: () => [el('span', 'k', 'hash '), hashEl(b.hash || '', 8)],
         st: () => {
-          const out = [el('div', null, `nonce ${b.nonce}`), el('div', null, `${nTx} tx`)];
+          // "prev" is the hash of the block on the left: that pointer is what chains the blocks together
+          const prev = el('div', /prevHash|anterior/.test(b.reason || '') ? 'prev broken' : 'prev');
+          prev.append(el('span', 'k', 'prev '), b.index === 0 ? 'ninguno' : hashEl(b.prevHash || '', 8));
+          const out = [prev, el('div', null, `nonce ${b.nonce}`), el('div', null, `${nTx} tx`)];
           if (b.invalid) out.push(el('div', 'why', b.reason || 'inválido'));
           return out;
         },
@@ -209,7 +224,7 @@ export function createGraph(svg) {
       if (prevId) specs.set(`${prevId}>${id}`, { from: prevId, to: id, used: true, bad: b.invalid });
       prevId = lastId = id;
     });
-    if (lastId) {
+    if (lastId && offset === 0) {
       const lastB = chain[chain.length - 1];
       specs.set(`miner>${lastId}`, { from: 'miner', to: lastId, used: true, bad: lastB.invalid });
     }
@@ -217,7 +232,7 @@ export function createGraph(svg) {
     (model.contracts || []).forEach((c, i) => {
       const id = `contract:${c.address}`;
       defs.set(id, {
-        x: 1300, y: 20 + i * 112, w: 280, h: 96, kind: 'tool', small: true, icon: '⚙', title: c.name,
+        x: 1300, y: 20 + i * 112, w: 280, h: 96, kind: 'tool', small: true, icon: CONTRACT_ICON[c.address] || 'contract', title: c.name,
         key: `${c.name}|${c.figure}`, st: () => c.figure,
       });
       specs.set(`miner>${id}`, { from: 'miner', to: id, mode: 'h', tool: true });

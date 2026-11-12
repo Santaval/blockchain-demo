@@ -10,7 +10,8 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><span class="logo">◈</span> Admin</div>
+    <div class="brand"><span class="logo" data-icon="logo"></span> Admin</div>
+    <button type="button" class="btn icon" data-theme-toggle data-icon="contrast"></button>
     <span id="status" class="chip" data-connected="false">Desconectado</span>
   </header>
 
@@ -20,16 +21,19 @@
     <button type="submit" class="btn primary">Entrar</button>
   </div></form>
 
+  <nav id="jump" class="jump" hidden aria-label="Secciones"></nav>
+
   <main id="panel" hidden>
-    <section class="card">
-      <div class="node small k-trigger"><div class="ic">▶</div><div class="tx"><div class="ttl">Pantalla</div><div class="sub">Qué se proyecta</div></div></div>
+    <section class="card" id="s-pantalla" data-title="Pantalla">
+      <div class="node small k-trigger"><div class="ic" data-icon="screen"></div><div class="tx"><div class="ttl">Pantalla</div><div class="sub">Qué se proyecta</div></div></div>
       <div class="body">
       <div id="panels" class="seg wrap"></div>
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-ai"><div class="ic">✦</div><div class="tx"><div class="ttl">Minería</div><div class="sub">Bloques y dificultad</div></div><span id="miners" class="chip c-info" hidden></span><span id="mining" class="chip c-running" hidden>minando…</span></div>
+    <section class="card" id="s-mineria" data-title="Minería">
+      <div class="node small k-ai"><div class="ic" data-icon="pick"></div><div class="tx"><div class="ttl">Minería</div><div class="sub">Bloques y dificultad</div></div><span id="miners" class="chip c-info" hidden></span><span id="mining" class="chip c-running" hidden>minando…</span></div>
+      <div class="body">
       <p class="info">Altura <b id="height">0</b> · Mempool <b id="mempool">0</b></p>
       <div class="grid">
         <button id="toggle-miner" type="button" class="btn"></button>
@@ -42,8 +46,9 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-sink"><div class="ic">⚠</div><div class="tx"><div class="ttl">Manipular</div><div class="sub">Rompe la cadena y re-mina</div></div><span id="tampered" class="chip c-bad" hidden>manipulada</span></div>
+    <section class="card" id="s-manipular" data-title="Manipular">
+      <div class="node small k-sink"><div class="ic" data-icon="alert"></div><div class="tx"><div class="ttl">Manipular</div><div class="sub">Rompe la cadena y re-mina</div></div><span id="tampered" class="chip c-bad" hidden>manipulada</span></div>
+      <div class="body">
       <p class="info">Sube la dificultad a 5 y re-mina para ver cuánto tarda.</p>
       <label for="t-block">Bloque</label>
       <select id="t-block"></select>
@@ -61,8 +66,9 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-tool"><div class="ic">⚙</div><div class="tx"><div class="ttl">Votación</div><div class="sub">0xVOTACION</div></div><span id="v-state" class="chip c-neutral"></span></div>
+    <section class="card" id="s-votacion" data-title="Votación">
+      <div class="node small k-tool"><div class="ic" data-icon="vote"></div><div class="tx"><div class="ttl">Votación</div><div class="sub">0xVOTACION</div></div><span id="v-state" class="chip c-neutral"></span></div>
+      <div class="body">
       <label for="v-question">Pregunta</label>
       <input id="v-question" maxlength="120">
       <label for="v-options">Opciones (una por línea, 2 a 6)</label>
@@ -76,8 +82,9 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-tool"><div class="ic">⚙</div><div class="tx"><div class="ttl">Subasta</div><div class="sub">0xSUBASTA</div></div><span id="a-state" class="chip c-neutral"></span></div>
+    <section class="card" id="s-subasta" data-title="Subasta">
+      <div class="node small k-tool"><div class="ic" data-icon="tag"></div><div class="tx"><div class="ttl">Subasta</div><div class="sub">0xSUBASTA</div></div><span id="a-state" class="chip c-neutral"></span></div>
+      <div class="body">
       <label for="a-item">Artículo</label>
       <input id="a-item" maxlength="60">
       <label for="a-seconds">Duración (segundos, 15 a 600)</label>
@@ -87,8 +94,9 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-tool"><div class="ic">⚙</div><div class="tx"><div class="ttl">Banco</div><div class="sub">0xBANCO</div></div><span id="b-state" class="chip c-neutral"></span></div>
+    <section class="card" id="s-banco" data-title="Banco">
+      <div class="node small k-tool"><div class="ic" data-icon="bank"></div><div class="tx"><div class="ttl">Banco</div><div class="sub">0xBANCO</div></div><span id="b-state" class="chip c-neutral"></span></div>
+      <div class="body">
       <button id="b-toggle" type="button" class="btn">Habilitar botón de ataque</button>
       <label for="b-amount">Monto (1 a 1000)</label>
       <input id="b-amount" type="number" min="1" max="1000" value="10">
@@ -98,20 +106,26 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-step"><div class="ic">🧪</div><div class="tx"><div class="ttl">Pruebas</div><div class="sub">Laboratorio sobre un fork de la red</div></div><span id="lab-state" class="chip c-neutral" hidden></span></div>
+    <section class="card" id="s-pruebas" data-title="Pruebas">
+      <div class="node small k-step"><div class="ic" data-icon="flask"></div><div class="tx"><div class="ttl">Pruebas</div><div class="sub">Laboratorio sobre un fork de la red</div></div><span id="lab-state" class="chip c-neutral" hidden></span></div>
       <div class="body">
-      <p class="info">Semilla <b id="lab-seed">-</b></p>
-      <label for="lab-seed-in">Semilla (vacío = aleatoria)</label>
-      <input id="lab-seed-in" type="number" min="0" step="1" inputmode="numeric">
-      <button id="lab-all" type="button" class="btn primary">Correr todas</button>
+      <p class="info">Corre una técnica o todas seguidas. La pantalla pasa sola al panel Pruebas.</p>
+      <div class="grid">
+        <button id="lab-all" type="button" class="btn primary">Correr todas</button>
+        <button id="lab-clear" type="button" class="btn">Limpiar</button>
+      </div>
       <ul id="lab-suites" class="lab-suites"></ul>
-      <button id="lab-clear" type="button" class="btn">Limpiar</button>
+      <label for="lab-seed-in">Semilla (vacío = aleatoria) · última: <b id="lab-seed">-</b></label>
+      <div class="row">
+        <input id="lab-seed-in" type="number" min="0" step="1" inputmode="numeric" placeholder="aleatoria">
+        <button id="lab-seed-again" type="button" class="btn" disabled>Repetir la última</button>
+      </div>
+      <p class="info">Con la misma semilla, la misma secuencia: así una falla se puede reproducir.</p>
       </div>
     </section>
 
-    <section class="card">
-      <div class="node small k-neutral"><div class="ic">⋯</div><div class="tx"><div class="ttl">Otros</div><div class="sub">Regalos y reinicio</div></div></div>
+    <section class="card" id="s-otros" data-title="Otros">
+      <div class="node small k-neutral"><div class="ic" data-icon="more"></div><div class="tx"><div class="ttl">Otros</div><div class="sub">Regalos y reinicio</div></div></div>
       <div class="body">
       <button id="gift" type="button" class="btn">Regalar +50 a todos</button>
       <button id="reset" type="button" class="btn danger">Reset total</button>
