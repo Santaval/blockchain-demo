@@ -2,7 +2,8 @@
 import crypto from 'node:crypto';
 import { ADMIN_PASSWORD } from './config.js';
 import { state, events, createSystemTx, reset } from './state.js';
-import { setDifficulty, setMineInterval, startMiner, stopMiner, isMinerRunning, isMining, mineNow } from './miner.js';
+import { setDifficulty, setMineInterval, startMiner, stopMiner, isMinerRunning, isMining, isTampered, mineNow } from './miner.js';
+import { tamper, remine, restore } from './tamper.js';
 
 export const PANELS = ['qr', 'red', 'votacion', 'subasta', 'banco'];
 const GIFT_AMOUNT = 50;
@@ -46,6 +47,7 @@ export function registerAdminHandlers(socket, ctx) {
   });
 
   command('miner', ({ action }) => {
+    if ((action === 'resume' || action === 'mine-now') && isTampered()) return { ok: false, reason: 'Restaura la cadena primero' };
     if (action === 'pause') stopMiner();
     else if (action === 'resume') startMiner();
     else if (action === 'mine-now') {
@@ -82,6 +84,10 @@ export function registerAdminHandlers(socket, ctx) {
     changed();
     return { ok: true, count: targets.length };
   });
+
+  command('tamper', (p) => tamper(p));
+  command('remine', (p) => remine(p));
+  command('restore', () => restore());
 
   command('reset', () => {
     reset();

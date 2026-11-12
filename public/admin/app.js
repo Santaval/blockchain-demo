@@ -98,6 +98,44 @@ function disarm() {
   $('reset').textContent = 'Reset total';
 }
 
+// Manipular: block / tx selectors are rebuilt only when the chain shape changes, to keep the user's selection.
+let chain = [];
+let selectsSig = '';
+const nickOf = new Map();
+const name = (a) => nickOf.get(a) || a;
+function renderTamper(s) {
+  chain = s.chain || [];
+  (s.accounts || []).forEach((a) => nickOf.set(a.address, a.nick));
+  $('tampered').hidden = !s.tampered;
+  const ul = $('validity');
+  ul.replaceChildren();
+  chain.forEach((b, i) => {
+    const ok = (s.validity || [])[i]?.valid !== false;
+    const li = document.createElement('li');
+    li.className = ok ? '' : 'bad';
+    li.textContent = `${ok ? '✔' : '✖'} #${b.index}`;
+    ul.appendChild(li);
+  });
+  const withTxs = chain.filter((b) => b.index > 0 && b.txs.length);
+  const sig = withTxs.map((b) => b.index + ':' + b.txs.length).join();
+  if (sig === selectsSig) return;
+  selectsSig = sig;
+  const prev = $('t-block').value;
+  $('t-block').replaceChildren(...withTxs.map((b) => new Option(`Bloque #${b.index} (${b.txs.length} tx)`, b.index)));
+  if (withTxs.some((b) => String(b.index) === prev)) $('t-block').value = prev;
+  fillTxs();
+}
+function fillTxs() {
+  const b = chain.find((x) => String(x.index) === $('t-block').value);
+  $('t-tx').replaceChildren(...(b ? b.txs : []).map((t, i) => new Option(`${name(t.from)} → ${name(t.to)} · ${t.amount}`, i)));
+}
+$('t-block').addEventListener('change', fillTxs);
+$('tamper').addEventListener('click', () => send('admin:tamper', {
+  block: Number($('t-block').value), tx: Number($('t-tx').value), amount: Number($('t-amount').value),
+}, 'Cadena manipulada'));
+$('remine').addEventListener('click', () => send('admin:remine', { block: Number($('t-block').value) }, 'Re-minando…'));
+$('restore').addEventListener('click', () => send('admin:restore', undefined, 'Cadena restaurada'));
+
 function render(s) {
   if (!loggedIn) return;
   panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
@@ -108,7 +146,10 @@ function render(s) {
   $('mining').hidden = !s.mining;
   $('difficulty').value = String(s.difficulty);
   $('interval').value = String(s.mineIntervalMs);
+  renderTamper(s);
 }
 socket.on('state:full', render);
-socket.on('mine:start', () => { $('mining').hidden = false; });
+socket.on('mine:start', () => { $('mining').hidden = false; $('remine-nonce').textContent = '0'; });
+socket.on('mine:progress', (p) => { $('remine-nonce').textContent = String(p.nonce); });
+socket.on('block:remined', () => { $('mining').hidden = true; });
 socket.on('block:mined', () => { $('mining').hidden = true; });

@@ -61,7 +61,7 @@ function minerHash(h, difficulty) {
 function setMining(info) {
   mining = info;
   $('miner-strip').classList.toggle('active', !!info);
-  $('miner-title').textContent = info ? `Minando bloque #${info.index}` : 'Esperando transacciones…';
+  $('miner-title').textContent = info ? `${info.remine ? 'Re-minando' : 'Minando'} bloque #${info.index}` : 'Esperando transacciones…';
   if (!info) { $('miner-nonce').textContent = '-'; $('miner-hash').replaceChildren(); }
 }
 
@@ -118,6 +118,8 @@ function render(s) {
   const panel = PANEL_TITLES[s.panel] ? s.panel : 'qr';
   $('main-panel').dataset.panel = panel; // #12 fills each panel
   $('main-panel-title').textContent = PANEL_TITLES[panel];
+  $('tamper-banner').hidden = !s.tampered;
+  if (mining && !s.mining) setMining(null); // run aborted (tamper/restore/reset)
   mineIntervalMs = s.mineIntervalMs || mineIntervalMs;
   $('participants').textContent = String(s.participants ?? 0);
   $('height').textContent = String(s.height ?? 0);
@@ -159,6 +161,8 @@ socket.on('block:mined', (b) => {
   freshBlocks.add(b.hash);
   setTimeout(() => freshBlocks.delete(b.hash), 2000);
 });
+
+socket.on('block:remined', () => setMining(null));
 
 socket.on('mine:start', (info) => {
   setMining(info);

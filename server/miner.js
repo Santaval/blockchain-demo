@@ -63,41 +63,74 @@ function commit(block) {
 
 // Synchronous, instant PoW (used by tests and scripts).
 export function mineBlock() {
-  if (state.mempool.length === 0) return null;
+  if (tampered || state.mempool.length === 0) return null;
   const { block } = selectTxs();
   const target = '0'.repeat(block.difficulty);
   while (!(block.hash = computeBlockHash(block)).startsWith(target)) block.nonce++;
   return commit(block);
 }
 
-let generation = 0; // bumped on reset so in-flight runs abort
+let generation = 0; // bumped on reset/tamper so in-flight runs abort
 let mining = false;
-events.on('reset', () => { generation++; });
+let tampered = false;
+events.on('reset', () => { generation++; mining = false; tampered = false; });
 export const isMining = () => mining;
+export const isTampered = () => tampered;
+
+// Tampering (or restoring) aborts any in-flight run: it must never commit on top of an edited chain.
+export function setTampered(value) {
+  tampered = value;
+  generation++;
+  mining = false;
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Shared batched PoW: tries MINE_BATCH nonces, reports progress, pauses. Returns false if aborted.
+async function powAnimated(block, gen) {
+  const target = '0'.repeat(block.difficulty);
+  for (;;) {
+    for (let i = 0; i < MINE_BATCH; i++) {
+      block.hash = computeBlockHash(block);
+      if (block.hash.startsWith(target)) return true;
+      block.nonce++;
+    }
+    events.emit('mine:progress', { index: block.index, nonce: block.nonce, hash: block.hash });
+    await sleep(MINE_PAUSE_MS);
+    if (gen !== generation) return false;
+  }
+}
+
 // Same result as mineBlock(), but PoW runs in batches with pauses so the projector can show it.
 export async function mineBlockAnimated() {
-  if (mining || state.mempool.length === 0) return null;
+  if (mining || tampered || state.mempool.length === 0) return null;
   mining = true;
   const gen = generation;
   try {
     const { block, txs } = selectTxs();
-    const target = '0'.repeat(block.difficulty);
     events.emit('mine:start', { index: block.index, difficulty: block.difficulty, txCount: txs.length });
-    for (;;) {
-      for (let i = 0; i < MINE_BATCH; i++) {
-        block.hash = computeBlockHash(block);
-        if (block.hash.startsWith(target)) return commit(block);
-        block.nonce++;
-      }
-      events.emit('mine:progress', { index: block.index, nonce: block.nonce, hash: block.hash });
-      await sleep(MINE_PAUSE_MS);
-      if (gen !== generation) return null;
-    }
+    return (await powAnimated(block, gen)) ? commit(block) : null;
   } finally {
-    mining = false;
+    if (gen === generation) mining = false;
+  }
+}
+
+// Re-runs PoW on an existing block (used after tampering) with the current difficulty.
+export async function remineBlock(index) {
+  const old = state.chain[index];
+  if (mining || !old) return null;
+  mining = true;
+  const gen = generation;
+  try {
+    const block = { ...old, nonce: 0, difficulty };
+    events.emit('mine:start', { index, difficulty, txCount: old.txs.length, remine: true });
+    if (!(await powAnimated(block, gen))) return null;
+    Object.assign(old, { nonce: block.nonce, difficulty: block.difficulty, hash: block.hash });
+    events.emit('block:remined', old);
+    events.emit('state:changed');
+    return old;
+  } finally {
+    if (gen === generation) mining = false;
   }
 }
 

@@ -32,3 +32,8 @@ button.danger.armed { background: var(--bad); color: #fff; }
 .toast { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 34rem; margin-inline: auto; padding: 0.8rem 1rem; border-radius: 12px; background: #11301c; border: 1px solid var(--ok); text-align: center; }
 .toast.err { background: var(--bad-bg); border-color: var(--bad); }
 [hidden] { display: none !important; }
+
+.tampered { color: var(--bad); font-size: 0.8rem; margin-left: 0.4rem; }
+.validity { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.validity li { padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); font-size: 0.9rem; }
+.validity li.bad { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }

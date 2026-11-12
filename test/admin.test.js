@@ -8,6 +8,7 @@ import * as wc from '../public/shared/wallet-crypto.js';
 import { ADMIN_PASSWORD } from '../server/config.js';
 import { state, reset, registerWallet } from '../server/state.js';
 import { getDifficulty, getMineInterval, isMinerRunning, stopMiner, setDifficulty, setMineInterval } from '../server/miner.js';
+import { mineBlock } from '../server/miner.js';
 import { attachSync } from '../server/sync.js';
 
 let httpServer, io, detach, url;
@@ -124,4 +125,19 @@ test('gift queues +50 per non-system account; panel survives reset', async () =>
   assert.equal((await emit(a, 'admin:reset')).ok, true);
   assert.equal(state.chain.length, 1);
   assert.equal((await full).panel, 'banco');
+});
+
+test('tamper commands work, and resume / mine-now are refused while tampered', async () => {
+  reset();
+  await addWallet('Ana');
+  mineBlock();
+  const a = await loggedAdmin();
+  assert.equal((await emit(a, 'admin:tamper', { block: 1, tx: 0, amount: 0 })).ok, false);
+  assert.equal((await emit(a, 'admin:restore')).ok, false);
+  assert.equal((await emit(a, 'admin:tamper', { block: 1, tx: 0, amount: 999 })).ok, true);
+  assert.deepEqual(await emit(a, 'admin:miner', { action: 'resume' }), { ok: false, reason: 'Restaura la cadena primero' });
+  assert.deepEqual(await emit(a, 'admin:miner', { action: 'mine-now' }), { ok: false, reason: 'Restaura la cadena primero' });
+  assert.equal((await emit(a, 'admin:restore')).ok, true);
+  assert.equal((await emit(a, 'admin:miner', { action: 'resume' })).ok, true);
+  stopMiner();
 });

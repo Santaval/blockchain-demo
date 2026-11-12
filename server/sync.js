@@ -1,7 +1,7 @@
 // Socket.io sync: per-role rooms, throttled full-state broadcast, per-wallet lite state.
 import { state, events, registerWallet, getBalance, availableBalance, expectedNonce, listNicks } from './state.js';
 import { submitTx } from './validator.js';
-import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining } from './miner.js';
+import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining, isTampered } from './miner.js';
 import { registerAdminHandlers, getPanel } from './admin.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
@@ -28,6 +28,7 @@ export function buildFullState() {
     panel: getPanel(),
     minerRunning: isMinerRunning(),
     mining: isMining(),
+    tampered: isTampered(),
   };
 }
 
@@ -111,6 +112,7 @@ export function attachSync(io) {
       pendingProgress = null; // drop stale progress once the block is mined
       io.to('pantalla').to('admin').emit('block:mined', block);
     },
+    'block:remined': (block) => io.to('pantalla').to('admin').emit('block:remined', block),
     'mine:start': (info) => {
       pendingProgress = null;
       io.to('pantalla').to('admin').emit('mine:start', info);

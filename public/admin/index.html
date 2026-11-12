@@ -38,6 +38,24 @@
     </section>
 
     <section class="card">
+      <h2>Manipular <span id="tampered" class="tampered" hidden>cadena manipulada</span></h2>
+      <p class="info">Sube la dificultad a 5 y re-mina para ver cuánto tarda.</p>
+      <label for="t-block">Bloque</label>
+      <select id="t-block"></select>
+      <label for="t-tx">Transacción</label>
+      <select id="t-tx"></select>
+      <label for="t-amount">Nuevo monto</label>
+      <input id="t-amount" type="number" min="1" step="1" inputmode="numeric">
+      <button id="tamper" type="button" class="danger">Manipular</button>
+      <div class="grid">
+        <button id="remine" type="button" class="primary">Re-minar bloque</button>
+        <button id="restore" type="button">Restaurar cadena</button>
+      </div>
+      <p class="info">Nonce: <b id="remine-nonce">-</b></p>
+      <ul id="validity" class="validity"></ul>
+    </section>
+
+    <section class="card">
       <h2>Otros</h2>
       <button id="gift" type="button">Regalar +50 a todos</button>
       <button id="reset" type="button" class="danger">Reset total</button>
