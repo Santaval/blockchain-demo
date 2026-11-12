@@ -623,7 +623,8 @@ async function onWorkerMessage(m) {
     stopWorker();
     const res = await emitAck('pool:submit', { round: j.round, nonce: m.nonce });
     if (!wantMining) return;
-    if (res?.ok) setStatus('Solución enviada. Esperando confirmación…');
+    // pool:won arrives before this ack, so a win is already on screen: just wait for the next round.
+    if (res?.ok) setStatus('Esperando el próximo bloque…');
     else setStatus(`${res?.reason || 'No se aceptó la solución'}. Esperando el próximo bloque…`);
   }
 }

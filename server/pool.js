@@ -21,6 +21,7 @@ export const setPoolTimeout = (ms) => { timeoutMs = ms; };
 const miners = new Map(); // address -> Set<socketId>
 let round = null; // { id, index, prevHash, timestamp, txs, difficulty, gen, per, tried, best, timer }
 let roundSeq = 0;
+let lastMinerCount = 0; // miners leave when the pool is disabled; the ETA should still reflect the group
 
 const nickOf = (addr) => state.accounts.get(addr)?.nick ?? addr;
 const leadingZeros = (hex) => hex.length - hex.replace(/^0+/, '').length;
@@ -45,7 +46,8 @@ function humanTime(seconds) {
 
 export function poolState() {
   const d = getDifficulty();
-  const etaSeconds = Math.round((16 ** d / (POOL_HASH_RATE * Math.max(1, miners.size))) * 10) / 10;
+  const group = Math.max(1, miners.size || lastMinerCount);
+  const etaSeconds = Math.round((16 ** d / (POOL_HASH_RATE * group)) * 10) / 10;
   const enabled = d <= POOL_MAX_DIFFICULTY;
   return {
     enabled,
@@ -135,6 +137,7 @@ export function join(address, socketId) {
   const isNew = !miners.has(address);
   if (isNew) miners.set(address, new Set());
   miners.get(address).add(socketId);
+  lastMinerCount = miners.size;
   if (round) sendJob(address);
   events.emit('state:changed');
   return { ok: true, rate: POOL_HASH_RATE, reward: POOL_REWARD };
@@ -187,7 +190,7 @@ export function progress(address, payload) {
   events.emit('mine:progress', { index: round.index, nonce: total, hash: round.best ?? '' });
 }
 
-events.on('reset', () => { miners.clear(); abort(false); });
+events.on('reset', () => { miners.clear(); lastMinerCount = 0; abort(false); });
 events.on('mining:aborted', () => abort(true));
 events.on('difficulty:changed', () => {
   if (round && getDifficulty() > POOL_MAX_DIFFICULTY) fallback('La dificultad subió');

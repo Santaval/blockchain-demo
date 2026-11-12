@@ -57,7 +57,7 @@ function refreshMiner() {
   else if (mining) sub = `${mining.remine ? 'Re-minando' : 'Minando'} #${mining.index}`;
   else if (minedLabel) sub = minedLabel;
   else if (state && state.minerRunning === false) sub = 'En pausa';
-  else if (state?.pool && !state.pool.enabled && state.pool.miners?.length) sub = poolEta(state.pool);
+  else if (state?.pool && !state.pool.enabled && state.miners?.length) sub = poolEta(state.pool); // miners have left by now; still show the lesson
   else sub = 'Esperando transacciones…';
   graph.setMiner({ sub, active: !!mining, nonce: miner.nonce, hash: miner.hash, hit: miner.hit });
 }
