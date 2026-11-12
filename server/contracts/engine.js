@@ -27,6 +27,14 @@ events.on('reset', () => {
   }
 });
 
+// Storage copy of every contract, for forking the node in the lab.
+export const exportStorages = () => Object.fromEntries([...registry].map(([addr, c]) => [addr, structuredClone(c.storage)]));
+export function importStorages(storages) {
+  for (const [addr, storage] of Object.entries(storages ?? {})) {
+    if (registry.has(addr)) registry.get(addr).storage = structuredClone(storage);
+  }
+}
+
 export const isContract = (addr) => registry.has(addr);
 export const getContract = (addr) => registry.get(addr);
 export const getLogs = () => logs;

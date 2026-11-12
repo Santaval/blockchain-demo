@@ -8,8 +8,9 @@ import { configureVoting, setVotingOpen } from './contracts/voting.js';
 import { openAuction } from './contracts/auction.js';
 import { seedBank } from './contracts/bank.js';
 import { setAttackEnabled, launchAttack } from './contracts/attacker.js';
+import { runLab, clearLab } from './lab/index.js';
 
-export const PANELS = ['qr', 'red', 'votacion', 'subasta', 'banco'];
+export const PANELS = ['qr', 'red', 'votacion', 'subasta', 'banco', 'pruebas'];
 const GIFT_AMOUNT = 50;
 
 let panel = 'qr'; // survives reset()
@@ -101,6 +102,14 @@ export function registerAdminHandlers(socket, ctx) {
   command('attack-enabled', ({ enabled }) => { const r = setAttackEnabled(enabled); if (r.ok) changed(); return r; });
   command('attack', ({ amount = 10 }) => { const r = launchAttack({ amount }); if (r.ok) changed(); return r; });
   command('bank-seed', (p) => { const r = seedBank(p); if (r.ok) changed(); return r; });
+
+  // Testing lab. lab-run acks { ok, seed } or { ok: false, reason }; lab-clear also cancels a running lab.
+  command('lab-run', ({ suite = 'all', seed }) => {
+    const r = runLab(suite, { seed });
+    if (r.ok) panel = 'pruebas';
+    return r;
+  });
+  command('lab-clear', () => { clearLab(); return { ok: true }; });
 
   command('tamper', (p) => tamper(p));
   command('remine', (p) => remine(p));
