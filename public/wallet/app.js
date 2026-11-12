@@ -20,6 +20,7 @@ let toastTimer = null;
 function toast(msg) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.remove('error');
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 2500);
@@ -137,16 +138,19 @@ function renderNicks() {
   if (others.some((n) => n.address === prev)) sel.value = prev;
 }
 
+const STATUS_CHIP = { pending: 'c-neutral blink', confirmed: 'c-ok', failed: 'c-bad', rejected: 'c-bad' };
+
 function histRow(cls, label, amount, status, statusCls) {
   const li = document.createElement('li');
   li.className = cls;
-  const left = document.createElement('div');
-  const a = document.createElement('div'); a.textContent = label;
-  const s = document.createElement('div'); s.className = 'st ' + statusCls; s.textContent = status;
+  const ic = document.createElement('div'); ic.className = 'dir'; ic.textContent = cls === 'in' ? '↓' : '↑';
+  const left = document.createElement('div'); left.className = 'tx';
+  const a = document.createElement('div'); a.className = 'who'; a.textContent = label;
+  const s = document.createElement('span'); s.className = 'chip ' + (STATUS_CHIP[statusCls] || 'c-neutral'); s.textContent = status;
   left.append(a, s);
   const amt = document.createElement('div'); amt.className = 'amt';
   amt.textContent = (cls === 'in' ? '+' : '-') + amount;
-  li.append(left, amt);
+  li.append(ic, left, amt);
   return li;
 }
 
@@ -196,13 +200,21 @@ function renderContracts() {
   root.replaceChildren();
   root.hidden = active.length === 0;
   for (const c of active) {
-    const card = document.createElement('section');
-    card.className = 'card';
-    const title = document.createElement('h2');
-    title.textContent = c.name;
-    card.appendChild(title);
+    const section = document.createElement('section');
+    section.className = 'card';
+    const head = document.createElement('div');
+    head.className = 'node small k-tool';
+    const ic = document.createElement('div'); ic.className = 'ic'; ic.textContent = '⚙';
+    const tx = document.createElement('div'); tx.className = 'tx';
+    const ttl = document.createElement('div'); ttl.className = 'ttl'; ttl.textContent = c.name;
+    const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = c.address;
+    tx.append(ttl, sub);
+    head.append(ic, tx);
+    const card = document.createElement('div');
+    card.className = 'body';
+    section.append(head, card);
     CARD_RENDERERS[c.address]?.(card, c);
-    root.appendChild(card);
+    root.appendChild(section);
   }
 }
 
@@ -227,7 +239,7 @@ CARD_RENDERERS['0xVOTACION'] = (card, c) => {
     v.options.forEach((opt, i) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'vote-btn';
+      b.className = 'btn vote-btn';
       b.textContent = opt;
       b.addEventListener('click', async () => {
         card.querySelectorAll('button').forEach((x) => { x.disabled = true; });
@@ -270,6 +282,7 @@ CARD_RENDERERS['0xSUBASTA'] = (card, c) => {
   input.placeholder = 'Tu oferta';
   const b = document.createElement('button');
   b.type = 'button';
+  b.className = 'btn primary';
   b.textContent = 'Ofertar';
   b.addEventListener('click', async () => {
     const amount = Number(input.value);
@@ -299,10 +312,11 @@ CARD_RENDERERS['0xBANCO'] = (card, c) => {
   input.placeholder = 'Monto a depositar';
   const dep = document.createElement('button');
   dep.type = 'button';
+  dep.className = 'btn primary';
   dep.textContent = 'Depositar';
   const out = document.createElement('button');
   out.type = 'button';
-  out.className = 'secondary';
+  out.className = 'btn';
   out.textContent = 'Retirar';
   out.disabled = !(c.me?.myDeposit > 0);
   const run = async (method, amount) => {
@@ -333,7 +347,7 @@ CARD_RENDERERS['0xATACANTE'] = (card, c) => {
   input.placeholder = 'Monto del ataque';
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'danger';
+  b.className = 'btn danger';
   b.textContent = 'Atacar';
   b.addEventListener('click', async () => {
     const amount = Number(input.value);
