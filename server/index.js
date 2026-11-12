@@ -5,9 +5,9 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { PORT } from './config.js';
 import { startMiner } from './miner.js';
+import { attachSync } from './sync.js';
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
-const ROLES = ['wallet', 'pantalla', 'admin'];
 
 const app = express();
 const server = http.createServer(app);
@@ -20,16 +20,7 @@ app.get('/admin', (_req, res) => res.sendFile(path.join(publicDir, 'admin', 'ind
 
 app.use(express.static(publicDir));
 
-io.on('connection', (socket) => {
-  const role = socket.handshake.query.role;
-  if (!ROLES.includes(role)) {
-    socket.disconnect(true);
-    return;
-  }
-  socket.join(role);
-  console.log(`[socket] ${socket.id} connected as ${role}`);
-  socket.on('disconnect', () => console.log(`[socket] ${socket.id} (${role}) disconnected`));
-});
+attachSync(io);
 
 server.listen(PORT, () => {
   console.log(`Servidor en http://localhost:${PORT}`);
