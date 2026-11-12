@@ -14,7 +14,7 @@ let toastTimer = null;
 function toast(msg, ok = true) {
   const t = $('toast');
   t.textContent = msg;
-  t.classList.toggle('err', !ok);
+  t.classList.toggle('error', !ok);
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 2500);
@@ -68,15 +68,31 @@ const panelButtons = PANELS.map(([id, label]) => {
   $('panels').appendChild(b);
   return b;
 });
-DIFFICULTIES.forEach((d) => $('difficulty').appendChild(new Option(`${d} ceros`, d)));
-INTERVALS.forEach((s) => $('interval').appendChild(new Option(`${s} s`, s * 1000)));
+
+// Segmented control: one button per value, button.on marks the current one.
+function buildSeg(el, values, label, onPick) {
+  return values.map((v) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label(v);
+    b.dataset.value = String(v);
+    b.addEventListener('click', () => onPick(v));
+    el.appendChild(b);
+    return b;
+  });
+}
+function markSeg(buttons, value) {
+  buttons.forEach((b) => b.classList.toggle('on', b.dataset.value === String(value)));
+}
+const diffButtons = buildSeg($('difficulty'), DIFFICULTIES, (d) => String(d),
+  (d) => send('admin:difficulty', { value: d }, 'Dificultad cambiada'));
+const intervalButtons = buildSeg($('interval'), INTERVALS.map((s) => s * 1000), (ms) => `${ms / 1000} s`,
+  (ms) => send('admin:interval', { ms }, 'Intervalo cambiado'));
 
 let minerRunning = true;
 $('toggle-miner').addEventListener('click', () =>
   send('admin:miner', { action: minerRunning ? 'pause' : 'resume' }, minerRunning ? 'Minería pausada' : 'Minería reanudada'));
 $('mine-now').addEventListener('click', () => send('admin:miner', { action: 'mine-now' }, 'Minando…'));
-$('difficulty').addEventListener('change', (e) => send('admin:difficulty', { value: Number(e.target.value) }, 'Dificultad cambiada'));
-$('interval').addEventListener('change', (e) => send('admin:interval', { ms: Number(e.target.value) }, 'Intervalo cambiado'));
 $('gift').addEventListener('click', () => send('admin:gift', undefined, 'Regalo enviado'));
 
 // Two-step confirm, no confirm() dialogs.
@@ -112,7 +128,7 @@ function renderTamper(s) {
   chain.forEach((b, i) => {
     const ok = (s.validity || [])[i]?.valid !== false;
     const li = document.createElement('li');
-    li.className = ok ? '' : 'bad';
+    li.className = ok ? 'chip c-ok' : 'chip c-bad';
     li.textContent = `${ok ? '✔' : '✖'} #${b.index}`;
     ul.appendChild(li);
   });
@@ -152,7 +168,7 @@ function renderVoting(s) {
     $('v-question').value = v.question;
     $('v-options').value = v.options.join('\n');
   }
-  $('v-state').textContent = v.open ? '· abierta' : '· cerrada';
+  $('v-state').textContent = v.open ? 'abierta' : 'cerrada';
   $('v-counts').textContent = v.options.length ? v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ') : 'Sin configurar';
 }
 
@@ -166,7 +182,7 @@ function renderAuction(s) {
   if (!v) return;
   auctionEnds = v.open ? v.endsAt : 0;
   $('a-open').disabled = v.open;
-  $('a-state').textContent = v.open ? '· abierta' : v.winner ? '· cerrada' : '· sin abrir';
+  $('a-state').textContent = v.open ? 'abierta' : v.winner ? 'cerrada' : 'sin abrir';
   $('a-info').textContent = v.winner
     ? `Ganó ${v.winner.nick} con ${v.winner.amount} por "${v.item}"`
     : v.item ? `"${v.item}" · oferta más alta: ${v.highest ? `${v.highest.nick} (${v.highest.amount})` : 'ninguna'}` : '';
@@ -174,7 +190,7 @@ function renderAuction(s) {
 setInterval(() => {
   if (!auctionEnds) return;
   const left = Math.max(0, Math.ceil((auctionEnds - Date.now()) / 1000));
-  $('a-state').textContent = left > 0 ? `· abierta · ${left}s` : '· cerrando…';
+  $('a-state').textContent = left > 0 ? `abierta · ${left}s` : 'cerrando…';
 }, 500);
 
 // Banco: toggle the wallet attack button, seed the bank, launch the attack from 0xHACKER.
@@ -188,20 +204,20 @@ function renderBank(s) {
   if (!bank || !atk) return;
   attackEnabled = atk.enabled;
   $('b-toggle').textContent = attackEnabled ? 'Deshabilitar botón de ataque' : 'Habilitar botón de ataque';
-  $('b-state').textContent = attackEnabled ? '· ataque habilitado' : '· ataque oculto';
+  $('b-state').textContent = attackEnabled ? 'ataque habilitado' : 'ataque oculto';
   $('b-info').textContent = `Saldo del banco: ${bank.balance}` + (atk.lastLoot ? ` · último botín: ${atk.lastLoot} (${atk.rounds} reentradas)` : '');
 }
 
 function render(s) {
   if (!loggedIn) return;
-  panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
+  panelButtons.forEach((b) => b.classList.toggle('on', b.dataset.panel === s.panel));
   minerRunning = !!s.minerRunning;
   $('toggle-miner').textContent = minerRunning ? 'Pausar' : 'Reanudar';
   $('height').textContent = String(s.height);
   $('mempool').textContent = String((s.mempool || []).length);
   $('mining').hidden = !s.mining;
-  $('difficulty').value = String(s.difficulty);
-  $('interval').value = String(s.mineIntervalMs);
+  markSeg(diffButtons, s.difficulty);
+  markSeg(intervalButtons, s.mineIntervalMs);
   renderTamper(s);
   renderVoting(s);
   renderAuction(s);

@@ -1,385 +1,169 @@
+// Pantalla (projector): socket, state, signature-based re-render and event -> canvas token wiring.
 import { connect, bindStatus } from '/shared/socket.js';
+import { createGraph, el, LOOP_EDGE } from './graph.js';
+import {
+  PANEL_META, initPanels, setPublicUrl, getPublicUrl, renderPanelBody, tickAuction,
+  bankInit, bankEnqueue, bankOverride, isBankLog, BANK, ATTACKER,
+} from './panels.js';
 
-const MAX_MEMPOOL = 8;
+const MAX_LOGS = 4;
+const MAX_CHIPS = 40;
+const CONTRACT_ORDER = ['0xVOTACION', '0xSUBASTA', BANK, ATTACKER];
+const PANEL_NODE = { qr: 'wallets', votacion: 'contract:0xVOTACION', subasta: 'contract:0xSUBASTA', banco: `contract:${BANK}` };
 const $ = (id) => document.getElementById(id);
+
 const socket = connect('pantalla');
 bindStatus(socket, $('status'));
+const graph = createGraph($('canvas'));
 
 let mineIntervalMs = 0;
 let lastBlockAt = Date.now();
 let lastHeight = null;
 let state = null;
-const sig = { chain: null, mempool: null, panel: null, logs: null };
-const freshBlocks = new Set();
-const freshTxs = new Set();
+const sig = { panel: null, logs: null, strip: null };
 
-let publicUrl = '';
-fetch('/api/info').then((r) => r.json()).then((i) => { publicUrl = i.url; $('url-small').textContent = i.url.replace(/^https?:\/\//, ''); if (state) renderPanel(state); }).catch(() => {});
+// Mining state machine: `mining` is the run in progress ({ index, difficulty, remine? }) or null.
+let mining = null;
+let minedLabel = '';
+let minedTimer = null;
+const miner = { nonce: '-', hash: '', hit: false };
 
-const PANEL_TITLES = { qr: 'Bienvenida', red: 'Red', votacion: 'Votación', subasta: 'Subasta', banco: 'Banco' };
+fetch('/api/info').then((r) => r.json()).then((i) => {
+  setPublicUrl(i.url);
+  $('url-small').textContent = i.url.replace(/^https?:\/\//, '');
+  if (state) { sig.panel = null; render(state); }
+}).catch(() => {});
 
-const short = (h) => (h ? h.slice(0, 10) + '…' : '');
+initPanels({ getState: () => state, onBankStep });
 
-// Hash with leading zeros emphasized (built with DOM nodes, never innerHTML).
-function hashEl(h) {
-  const span = document.createElement('span');
-  span.className = 'hash mono';
-  const zeros = (h.match(/^0*/) || [''])[0].length;
-  const shown = h.slice(0, 10);
-  const z = Math.min(zeros, shown.length);
-  if (z) {
-    const zs = document.createElement('span');
-    zs.className = 'zeros';
-    zs.textContent = shown.slice(0, z);
-    span.appendChild(zs);
-  }
-  span.appendChild(document.createTextNode(shown.slice(z) + (h.length > 10 ? '…' : '')));
-  return span;
+const nickMap = (s) => new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+const isRevert = (l) => l.message.startsWith('Revertido');
+
+// ---------- miner node ----------
+
+function refreshMiner() {
+  let sub;
+  if (mining) sub = `${mining.remine ? 'Re-minando' : 'Minando'} #${mining.index}`;
+  else if (minedLabel) sub = minedLabel;
+  else if (state && state.minerRunning === false) sub = 'En pausa';
+  else sub = 'Esperando transacciones…';
+  graph.setMiner({ sub, active: !!mining, nonce: miner.nonce, hash: miner.hash, hit: miner.hit });
 }
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-function row(label, valueNode) {
-  const r = el('div', 'row');
-  r.appendChild(el('span', 'k', label));
-  r.appendChild(valueNode);
-  return r;
-}
-
-// Mining strip: idle / mining a block, with the current hash and its leading zeros highlighted.
-let mining = null; // { index, difficulty }
 function minerHash(h, difficulty) {
-  const box = $('miner-hash');
-  box.replaceChildren();
   const zeros = (h.match(/^0*/) || [''])[0].length;
-  box.classList.toggle('hit', zeros >= difficulty);
-  if (zeros) box.appendChild(el('span', 'zeros', h.slice(0, zeros)));
-  box.append(h.slice(zeros));
+  miner.hash = h;
+  miner.hit = zeros >= difficulty;
 }
 function setMining(info) {
   mining = info;
-  $('miner-strip').classList.toggle('active', !!info);
-  $('miner-title').textContent = info ? `${info.remine ? 'Re-minando' : 'Minando'} bloque #${info.index}` : 'Esperando transacciones…';
-  if (!info) { $('miner-nonce').textContent = '-'; $('miner-hash').replaceChildren(); }
+  if (info) minedLabel = '';
+  else { miner.nonce = '-'; miner.hash = ''; miner.hit = false; }
+  refreshMiner();
 }
 
-function renderChain(s) {
-  const root = $('chain');
-  root.replaceChildren();
-  const chain = s.chain || [];
-  chain.forEach((b, i) => {
+// ---------- graph model ----------
+
+function contractFigure(c) {
+  const v = c.view || {};
+  if (c.address === '0xVOTACION') {
+    const n = (v.votes || []).length;
+    return `${n} ${n === 1 ? 'voto' : 'votos'}`;
+  }
+  if (c.address === '0xSUBASTA') return v.highest ? `${v.highest.amount} · ${v.highest.nick}` : 'Sin ofertas';
+  if (c.address === BANK) return `Saldo ${bankOverride() ?? v.balance}`;
+  if (c.address === ATTACKER) return `${v.rounds ?? 0} reentradas`;
+  return `Saldo ${c.balance ?? 0}`;
+}
+
+function syncGraph() {
+  if (!state) return;
+  const s = state;
+  const contracts = (s.contracts || [])
+    .filter((c) => c.active || (c.address === ATTACKER && c.view?.rounds > 0))
+    .sort((a, b) => {
+      const ia = CONTRACT_ORDER.indexOf(a.address), ib = CONTRACT_ORDER.indexOf(b.address);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    })
+    .slice(0, 4)
+    .map((c) => ({ address: c.address, name: c.name || c.address, figure: contractFigure(c) }));
+  const chain = (s.chain || []).map((b, i) => {
     const v = (s.validity || [])[i];
-    const invalid = v && v.valid === false;
-    if (i > 0) root.appendChild(el('div', 'link', '→'));
-    const card = el('div', 'block' + (invalid ? ' invalid' : '') + (freshBlocks.has(b.hash) ? ' fresh' : ''));
-    const isGenesis = b.index === 0;
-    card.appendChild(el('div', 'title', isGenesis ? 'Génesis' : 'Bloque #' + b.index));
-    card.appendChild(row('prev', isGenesis ? el('span', 'hash mono', '—') : hashEl(b.prevHash || '')));
-    card.appendChild(row('hash', hashEl(b.hash || '')));
-    const meta = el('div', 'meta');
-    const nonce = el('span', 'mono');
-    nonce.append('nonce ');
-    nonce.appendChild(el('b', null, String(b.nonce)));
-    const txs = el('span');
-    txs.appendChild(el('b', null, String((b.txs || []).length)));
-    txs.append(' tx');
-    meta.append(nonce, txs);
-    card.appendChild(meta);
-    if (invalid) card.appendChild(el('div', 'reason', '✖ ' + (v.reason || 'inválido')));
-    root.appendChild(card);
+    return { index: b.index, hash: b.hash || '', nonce: b.nonce, txs: (b.txs || []).length, invalid: !!v && v.valid === false, reason: v?.reason };
   });
+  const panel = PANEL_META[s.panel] ? s.panel : 'qr';
+  const selected = panel === 'red' ? (chain.length ? `block:${chain[chain.length - 1].index}` : null) : PANEL_NODE[panel];
+  graph.sync({ participants: s.participants ?? 0, pending: (s.mempool || []).length, chain, contracts, selected });
 }
 
-function renderMempool(s) {
-  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+// ---------- bottom strip ----------
+
+function renderStrip(s) {
+  const nick = nickMap(s);
   const name = (addr) => nick.get(addr) || (addr ? addr.slice(0, 8) + '…' : '?');
-  const txs = [...(s.mempool || [])].reverse(); // newest on top
-  $('mempool-count').textContent = String(txs.length);
-  const ul = $('mempool');
-  ul.replaceChildren();
-  if (!txs.length) {
-    ul.appendChild(el('li', 'empty', 'Mempool vacío'));
-    return;
-  }
-  txs.slice(0, MAX_MEMPOOL).forEach((tx) => {
-    const li = el('li', freshTxs.has(tx.hash) ? 'fresh' : '');
-    li.append(`${name(tx.from)} → ${name(tx.to)} · `);
-    li.appendChild(el('span', 'amt', String(tx.amount)));
-    li.append(tx.amount === 1 ? ' moneda' : ' monedas');
-    ul.appendChild(li);
-  });
-  if (txs.length > MAX_MEMPOOL) ul.appendChild(el('li', 'more', `+${txs.length - MAX_MEMPOOL} más`));
-}
-
-function fullHash(h) {
-  const span = el('span', 'hash mono');
-  const zeros = (h.match(/^0*/) || [''])[0].length;
-  if (zeros) span.appendChild(el('span', 'zeros', h.slice(0, zeros)));
-  span.append(h.slice(zeros));
-  return span;
-}
-
-function panelWelcome(s, body) {
-  const qr = el('img', 'qr-big');
-  qr.src = '/qr.svg';
-  qr.alt = 'QR para unirse';
-  const side = el('div', 'welcome-side');
-  side.appendChild(el('div', 'welcome-title', 'Escanea para unirte'));
-  side.appendChild(el('div', 'welcome-url mono', publicUrl.replace(/^https?:\/\//, '')));
-  const count = el('div', 'welcome-count');
-  count.appendChild(el('b', null, String(s.participants ?? 0)));
-  count.append((s.participants ?? 0) === 1 ? ' participante' : ' participantes');
-  side.appendChild(count);
-  body.append(qr, side);
-}
-
-function panelNetwork(s, body) {
-  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
-  const name = (addr) => nick.get(addr) || (addr ? addr.slice(0, 8) + '…' : '?');
+  const strip = $('strip');
+  strip.replaceChildren();
+  const chip = (t, cls) => strip.appendChild(el('span', `chip tx-chip ${cls}`, `${name(t.from)}→${name(t.to)} · ${t.amount}`));
   const last = (s.chain || [])[(s.chain || []).length - 1];
-
-  const detail = el('div', 'net-col');
-  detail.appendChild(el('h3', null, last ? (last.index === 0 ? 'Último bloque: Génesis' : `Último bloque: #${last.index}`) : 'Sin bloques'));
-  if (last) {
-    const kv = (k, v) => {
-      const r = el('div', 'kv');
-      r.appendChild(el('span', 'k', k));
-      r.appendChild(typeof v === 'string' ? el('span', 'mono', v) : v);
-      detail.appendChild(r);
-    };
-    kv('hash', fullHash(last.hash || ''));
-    kv('prevHash', last.index === 0 ? '—' : fullHash(last.prevHash || ''));
-    kv('nonce', String(last.nonce));
-    kv('dificultad', String(last.difficulty));
-    kv('hora', new Date(last.timestamp).toLocaleTimeString('es'));
-    const status = new Map((s.lastBlockStatus || []).map((x) => [x.hash, x]));
-    const ul = el('ul', 'net-txs');
-    (last.txs || []).slice(0, 5).forEach((t) => {
-      const st = status.get(t.hash);
-      const failed = st && st.status === 'failed';
-      const li = el('li', failed ? 'failed' : '');
-      li.append(`${failed ? '✖' : '✔'} ${name(t.from)} → ${name(t.to)} · ${t.amount}`);
-      if (failed && st.reason) li.appendChild(el('span', 'why', ' (' + st.reason + ')'));
-      ul.appendChild(li);
-    });
-    if ((last.txs || []).length > 5) ul.appendChild(el('li', 'more', `+${last.txs.length - 5} más`));
-    if (!(last.txs || []).length) ul.appendChild(el('li', 'more', 'Sin transacciones'));
-    detail.appendChild(ul);
-  }
-
-  const rank = el('div', 'net-col');
-  rank.appendChild(el('h3', null, 'Ranking de saldos'));
-  const top = (s.accounts || []).filter((a) => !a.system)
-    .sort((a, b) => Number(b.balance) - Number(a.balance)).slice(0, 10);
-  const ol = el('ol', 'ranking');
-  if (!top.length) ol.appendChild(el('li', 'more', 'Aún no hay participantes'));
-  top.forEach((a) => {
-    const li = el('li');
-    li.appendChild(el('span', 'rk-name', a.nick));
-    li.appendChild(el('span', 'rk-bal', String(a.balance)));
-    ol.appendChild(li);
-  });
-  rank.appendChild(ol);
-  body.append(detail, rank);
+  const status = new Map((s.lastBlockStatus || []).map((x) => [x.hash, x.status]));
+  if (last && last.index > 0) (last.txs || []).forEach((t) => chip(t, status.get(t.hash) === 'failed' ? 'c-bad' : 'c-ok'));
+  (s.mempool || []).forEach((t) => chip(t, 'c-running'));
+  while (strip.children.length > MAX_CHIPS) strip.firstChild.remove();
+  if (!strip.children.length) strip.appendChild(el('span', 'strip-empty', 'Sin transacciones todavía'));
+  strip.scrollLeft = strip.scrollWidth;
 }
 
-// Contract panels plug in here: PANEL_RENDERERS[panelName] = (state, body) => {...}.
-const PANEL_RENDERERS = {};
+// ---------- contract log ----------
 
-PANEL_RENDERERS.votacion = (s, body) => {
-  const c = (s.contracts || []).find((x) => x.address === '0xVOTACION');
-  const v = c?.view;
-  if (!v || !v.question) return void body.appendChild(el('div', 'placeholder', 'Sin votación configurada'));
-  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
-  const main = el('div', 'vote-main');
-  const head = el('div', 'vote-head');
-  head.appendChild(el('div', 'vote-question', v.question));
-  head.appendChild(el('span', 'vote-badge' + (v.open ? ' open' : ''), v.open ? 'ABIERTA' : 'CERRADA'));
-  main.appendChild(head);
-  const max = Math.max(1, ...v.counts);
-  v.options.forEach((opt, i) => {
-    const r = el('div', 'vote-row');
-    r.appendChild(el('span', 'vote-opt', opt));
-    const track = el('div', 'vote-track');
-    const bar = el('div', 'vote-bar');
-    bar.style.width = (v.counts[i] / max) * 100 + '%';
-    track.appendChild(bar);
-    r.append(track, el('span', 'vote-count', String(v.counts[i])));
-    main.appendChild(r);
-  });
-  const list = el('div', 'vote-list');
-  list.appendChild(el('h3', null, `Votos (${v.votes.length})`));
-  const ul = el('ul');
-  [...v.votes].reverse().slice(0, 12).forEach((x) => {
-    ul.appendChild(el('li', null, `${nick.get(x.address) || x.nick} → ${v.options[x.option]}`));
-  });
-  if (!v.votes.length) ul.appendChild(el('li', 'more', 'Aún no hay votos'));
-  list.appendChild(ul);
-  body.append(main, list);
-};
-
-PANEL_RENDERERS.subasta = (s, body) => {
-  const v = (s.contracts || []).find((x) => x.address === '0xSUBASTA')?.view;
-  if (!v || !v.item) return void body.appendChild(el('div', 'placeholder', 'Sin subasta abierta'));
-  const main = el('div', 'auc-main');
-  main.appendChild(el('div', 'auc-item', v.item));
-  if (v.open) {
-    const cd = el('div', 'auc-count');
-    cd.dataset.endsAt = v.endsAt;
-    main.appendChild(cd);
-    tickAuction();
-  } else main.appendChild(el('div', 'auc-count done', 'CERRADA'));
-  main.appendChild(el('div', 'auc-highest', v.highest ? `${v.highest.amount} · ${v.highest.nick}` : 'Sin ofertas'));
-  if (v.winner) main.appendChild(el('div', 'auc-winner', `Ganó ${v.winner.nick} · el contrato pagó ${v.winner.amount} al Presentador`));
-  const side = el('div', 'auc-side');
-  const list = (title, items, fmt) => {
-    side.appendChild(el('h3', null, `${title} (${items.length})`));
-    const ul = el('ul');
-    [...items].reverse().slice(0, 8).forEach((x) => ul.appendChild(el('li', null, fmt(x))));
-    if (!items.length) ul.appendChild(el('li', 'more', 'Ninguno'));
-    side.appendChild(ul);
-  };
-  list('Ofertas', v.bids, (b) => `${b.nick} ofertó ${b.amount}`);
-  list('Reembolsos', v.refunds, (r) => `${r.nick} recuperó ${r.amount}`);
-  body.append(main, side);
-};
-
-// Bank panel: reentrancy logs are replayed one by one (BANK_STEP_MS apart) so the balance visibly drops in a cascade.
-// Only logs that arrive live are queued; on page load the existing logs are shown instantly.
-const BANK = '0xBANCO', ATTACKER = '0xATACANTE', BANK_STEP_MS = 200, BANK_LINES = 14;
-const bank = { ready: false, shown: 0, lines: [], queue: [], timer: null };
-const bankView = () => (state?.contracts || []).find((c) => c.address === BANK)?.view;
-const isBankLog = (l) => l.contract === BANK || l.contract === ATTACKER;
-const quedan = (l) => (l.contract === BANK ? /quedan (\d+)$/.exec(l.message) : null);
-
-function bankInit(s) {
-  if (bank.ready) return;
-  bank.ready = true;
-  bank.lines = (s.contractLogs || []).filter(isBankLog).slice(-BANK_LINES);
-  bank.shown = Number(bankView()?.balance ?? 0);
-}
-function bankEnqueue(l) {
-  if (!isBankLog(l)) return;
-  bank.queue.push(l);
-  bank.timer ??= setInterval(bankStep, BANK_STEP_MS);
-}
-function bankStep() {
-  const l = bank.queue.shift();
-  if (l) {
-    bank.lines = [...bank.lines, l].slice(-BANK_LINES);
-    const m = quedan(l);
-    if (m) bank.shown = Number(m[1]);
-  }
-  if (!bank.queue.length) { // replay done: settle on the real balance
-    clearInterval(bank.timer);
-    bank.timer = null;
-    bank.shown = Number(bankView()?.balance ?? bank.shown);
-  }
-  paintBank();
-}
-function paintBank() {
-  const num = document.getElementById('bank-balance');
-  if (num) num.textContent = String(bank.shown);
-  const ul = document.getElementById('bank-log');
-  if (!ul) return;
-  ul.replaceChildren();
-  [...bank.lines].reverse().forEach((l) => {
-    const li = el('li', l.contract === ATTACKER ? 'atk' : l.message.startsWith('Revertido') ? 'revert' : '');
-    li.textContent = l.message;
-    ul.appendChild(li);
-  });
-  if (!bank.lines.length) ul.appendChild(el('li', 'more', 'Sin actividad'));
-}
-
-PANEL_RENDERERS.banco = (s, body) => {
-  bankInit(s);
-  const v = bankView();
-  if (!v) return void body.appendChild(el('div', 'placeholder', 'Sin banco'));
-  if (!bank.queue.length) bank.shown = Number(v.balance);
-  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
-  const atk = (s.contracts || []).find((c) => c.address === ATTACKER)?.view;
-  const main = el('div', 'bank-main');
-  main.appendChild(el('div', 'bank-label', 'Saldo del banco'));
-  const num = el('div', 'bank-balance');
-  num.id = 'bank-balance';
-  main.appendChild(num);
-  if (atk && atk.lastLoot > 0) main.appendChild(el('div', 'bank-loot', `Botín: ${atk.lastLoot} para ${nick.get(atk.owner) || '?'} · ${atk.rounds} reentradas`));
-  main.appendChild(el('div', 'bank-quote', 'El código es ley · The DAO, 2016'));
-  const side = el('div', 'bank-side');
-  side.appendChild(el('h3', null, 'Depositantes'));
-  const dep = el('ul');
-  v.depositors.slice(0, 6).forEach((d) => dep.appendChild(el('li', null, `${nick.get(d.address) || d.nick}: ${d.amount}`)));
-  if (!v.depositors.length) dep.appendChild(el('li', 'more', 'Ninguno'));
-  side.appendChild(dep);
-  side.appendChild(el('h3', null, 'Registro'));
-  const log = el('ul', 'bank-log');
-  log.id = 'bank-log';
-  side.appendChild(log);
-  body.append(main, side);
-  paintBank();
-};
-
-function tickAuction() {
-  const e = document.querySelector('.auc-count[data-ends-at]');
-  if (!e) return;
-  const left = Math.max(0, Math.ceil((Number(e.dataset.endsAt) - Date.now()) / 1000));
-  e.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'Cerrando…';
-}
-
-const MAX_LOGS = 8;
 function renderContractLog(s) {
-  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+  const nick = nickMap(s);
   const ul = $('contract-log');
   ul.replaceChildren();
   const logs = [...(s.contractLogs || [])].reverse().slice(0, MAX_LOGS); // newest first
   if (!logs.length) return void ul.appendChild(el('li', 'empty', 'Sin actividad de contratos'));
   for (const l of logs) {
-    const li = el('li', l.message.startsWith('Revertido') ? 'revert' : '');
+    const li = el('li', isRevert(l) ? 'revert' : '');
     li.appendChild(el('b', null, nick.get(l.contract) || l.contract));
     li.append(l.message);
     ul.appendChild(li);
   }
 }
 
+// ---------- panel ----------
+
 function renderPanel(s) {
-  const panel = PANEL_TITLES[s.panel] ? s.panel : 'qr';
-  $('main-panel').dataset.panel = panel;
-  $('main-panel-title').textContent = PANEL_TITLES[panel];
-  document.body.dataset.panel = panel; // small QR in the top bar hides while the big one shows
+  const panel = PANEL_META[s.panel] ? s.panel : 'qr';
+  document.body.dataset.panel = panel; // the small QR in the top bar hides while the big one shows
+  $('main-panel-title').textContent = PANEL_META[panel].title;
+  $('panel-ic').textContent = PANEL_META[panel].icon;
   const body = $('main-panel-body');
-  body.replaceChildren();
-  if (panel === 'qr') panelWelcome(s, body);
-  else if (panel === 'red') panelNetwork(s, body);
-  else if (PANEL_RENDERERS[panel]) PANEL_RENDERERS[panel](s, body);
-  else body.appendChild(el('div', 'placeholder', 'Disponible en la fase 3'));
+  body.dataset.panel = panel;
+  renderPanelBody(panel, s, body);
 }
+
+// ---------- state ----------
 
 function render(s) {
   state = s;
   bankInit(s);
   const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
-    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length].join('|') + publicUrl;
+    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length].join('|') + getPublicUrl();
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
-  $('tamper-banner').hidden = !s.tampered;
+  $('tamper-chip').hidden = !s.tampered;
+  document.body.classList.toggle('tampered', !!s.tampered);
   if (mining && !s.mining) setMining(null); // run aborted (tamper/restore/reset)
+  else refreshMiner();
   mineIntervalMs = s.mineIntervalMs || mineIntervalMs;
   $('participants').textContent = String(s.participants ?? 0);
   $('height').textContent = String(s.height ?? 0);
   $('difficulty').textContent = `${s.difficulty} ${s.difficulty === 1 ? 'cero' : 'ceros'}`;
   if (lastHeight !== null && s.height !== lastHeight) lastBlockAt = Date.now();
   lastHeight = s.height;
-  // Only rebuild DOM when something changed, so highlight animations are not restarted.
-  const cSig = (s.chain || []).map((b, i) => b.hash + ((s.validity || [])[i]?.valid === false ? 'x' : '')).join();
-  if (cSig !== sig.chain) { sig.chain = cSig; renderChain(s); }
+  syncGraph(); // nodes are persistent and only refilled when their own key changes
   const lSig = JSON.stringify(s.contractLogs || []) + (s.accounts || []).map((a) => a.address + a.nick).join();
   if (lSig !== sig.logs) { sig.logs = lSig; renderContractLog(s); }
-  const mSig = (s.mempool || []).map((t) => t.hash).join() + '|' + (s.accounts || []).map((a) => a.address + a.nick).join();
-  if (mSig !== sig.mempool) { sig.mempool = mSig; renderMempool(s); }
+  const tSig = (s.mempool || []).map((t) => t.hash).join() + '|' + (s.lastBlockStatus || []).map((x) => x.hash + x.status).join()
+    + '|' + (s.chain?.at(-1)?.hash ?? '') + '|' + (s.accounts || []).map((a) => a.address + a.nick).join();
+  if (tSig !== sig.strip) { sig.strip = tSig; renderStrip(s); }
 }
 
 function tick() {
@@ -390,45 +174,70 @@ function tick() {
 setInterval(tick, 250);
 setInterval(tickAuction, 250);
 
+// ---------- bank cascade ----------
+
+let flip = false;
+function onBankStep(l) {
+  syncGraph(); // the bank node reads the replayed balance
+  if (!l) return;
+  if (graph.hasEdge(LOOP_EDGE)) {
+    graph.token(LOOP_EDGE, { reverse: flip, cls: l.contract === ATTACKER || isRevert(l) ? 't-bad' : '', dur: 320 });
+    flip = !flip;
+  } else {
+    graph.token(`miner>contract:${BANK}`, { cls: isRevert(l) ? 't-bad' : '', dur: 400 });
+  }
+}
+
+// ---------- events ----------
+
 socket.on('state:full', render);
+
 socket.on('contract:log', (entry) => {
   if (!state) return;
   state.contractLogs = [...(state.contractLogs || []), entry].slice(-60);
-  bankEnqueue(entry);
-  sig.logs = null;
-  renderContractLog(state);
   sig.logs = JSON.stringify(state.contractLogs) + (state.accounts || []).map((a) => a.address + a.nick).join();
+  renderContractLog(state);
+  if (isBankLog(entry)) bankEnqueue(entry); // the bank replay queue draws its own tokens
+  else {
+    const id = `miner>contract:${entry.contract}`;
+    graph.token(id, { cls: isRevert(entry) ? 't-bad' : '', onDone: () => graph.pop(`contract:${entry.contract}`) });
+  }
 });
+
 socket.on('mempool:add', (tx) => {
-  freshTxs.add(tx.hash);
-  setTimeout(() => freshTxs.delete(tx.hash), 2000);
+  graph.token('wallets>mempool', { cls: tx.from === '0xSISTEMA' ? 't-ok' : '', onDone: () => graph.pop('mempool') });
 });
+
 socket.on('block:mined', (b) => {
   lastBlockAt = Date.now();
   if (mining && mining.index === b.index) {
-    $('miner-nonce').textContent = String(b.nonce);
+    miner.nonce = String(b.nonce);
     minerHash(b.hash, b.difficulty);
     mining = null;
-    $('miner-title').textContent = `Bloque #${b.index} minado`;
-    const strip = $('miner-strip');
-    strip.classList.remove('active', 'flash');
-    void strip.offsetWidth; // restart the animation
-    strip.classList.add('flash');
-    setTimeout(() => { strip.classList.remove('flash'); if (!mining) setMining(null); }, 1500);
+    minedLabel = `Bloque #${b.index} minado`;
+    refreshMiner();
+    graph.pop('miner');
+    clearTimeout(minedTimer);
+    minedTimer = setTimeout(() => { if (!mining) { minedLabel = ''; setMining(null); } }, 1500);
   }
-  freshBlocks.add(b.hash);
-  setTimeout(() => freshBlocks.delete(b.hash), 2000);
+  graph.token(`miner>block:${b.index}`, { cls: 't-ok', onDone: () => graph.pop(`block:${b.index}`) });
 });
 
 socket.on('block:remined', () => setMining(null));
 
 socket.on('mine:start', (info) => {
   setMining(info);
-  $('miner-nonce').textContent = '0';
-  $('miner-hash').replaceChildren();
+  miner.nonce = '0';
+  miner.hash = '';
+  miner.hit = false;
+  refreshMiner();
+  const n = Math.min(info.txCount || 0, 5);
+  for (let i = 0; i < n; i++) graph.token('mempool>miner', { delay: i * 150 });
 });
+
 socket.on('mine:progress', (p) => {
   if (!mining || p.index !== mining.index) return;
-  $('miner-nonce').textContent = String(p.nonce);
+  miner.nonce = String(p.nonce);
   minerHash(p.hash, mining.difficulty);
+  refreshMiner();
 });
