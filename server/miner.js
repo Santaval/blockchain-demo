@@ -1,5 +1,5 @@
 // Basic miner: takes txs from the mempool, applies them to balances, solves proof of work.
-import { MINE_INTERVAL_MS, DIFFICULTY, MAX_TXS_PER_BLOCK } from './config.js';
+import { MINE_INTERVAL_MS, DIFFICULTY, MAX_TXS_PER_BLOCK, MINE_BATCH, MINE_PAUSE_MS } from './config.js';
 import { computeBlockHash } from './crypto.js';
 import { state, events, getBalance } from './state.js';
 
@@ -27,10 +27,20 @@ function applyTx(tx) {
   return { ok: true };
 }
 
-export function mineBlock() {
-  if (state.mempool.length === 0) return null;
-  const txs = state.mempool.splice(0, MAX_TXS_PER_BLOCK);
+// Step 1: pick the txs without removing them, so they stay visible while mining runs.
+function selectTxs() {
+  const txs = state.mempool.slice(0, MAX_TXS_PER_BLOCK);
   const index = state.chain.length;
+  return {
+    txs,
+    block: { index, prevHash: state.chain[index - 1].hash, timestamp: Date.now(), txs, nonce: 0, difficulty },
+  };
+}
+
+// Step 3: remove the txs from the mempool, apply them, push the block and announce it.
+function commit(block) {
+  const { txs, index } = block;
+  state.mempool.splice(0, txs.length);
   const results = txs.map((tx) => {
     let result;
     try { result = applyTx(tx) ?? { ok: false, reason: 'Error al aplicar' }; }
@@ -41,14 +51,6 @@ export function mineBlock() {
       : { status: 'failed', block: index, reason: result.reason });
     return result;
   });
-
-  const block = {
-    index, prevHash: state.chain[index - 1].hash, timestamp: Date.now(),
-    txs, nonce: 0, difficulty,
-  };
-  const target = '0'.repeat(difficulty);
-  while (!(block.hash = computeBlockHash(block)).startsWith(target)) block.nonce++;
-
   state.chain.push(block);
   txs.forEach((tx, i) => {
     if (results[i].ok) events.emit('tx:confirmed', tx, index);
@@ -59,9 +61,53 @@ export function mineBlock() {
   return block;
 }
 
+// Synchronous, instant PoW (used by tests and scripts).
+export function mineBlock() {
+  if (state.mempool.length === 0) return null;
+  const { block } = selectTxs();
+  const target = '0'.repeat(block.difficulty);
+  while (!(block.hash = computeBlockHash(block)).startsWith(target)) block.nonce++;
+  return commit(block);
+}
+
+let generation = 0; // bumped on reset so in-flight runs abort
+let mining = false;
+events.on('reset', () => { generation++; });
+export const isMining = () => mining;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Same result as mineBlock(), but PoW runs in batches with pauses so the projector can show it.
+export async function mineBlockAnimated() {
+  if (mining || state.mempool.length === 0) return null;
+  mining = true;
+  const gen = generation;
+  try {
+    const { block, txs } = selectTxs();
+    const target = '0'.repeat(block.difficulty);
+    events.emit('mine:start', { index: block.index, difficulty: block.difficulty, txCount: txs.length });
+    for (;;) {
+      for (let i = 0; i < MINE_BATCH; i++) {
+        block.hash = computeBlockHash(block);
+        if (block.hash.startsWith(target)) return commit(block);
+        block.nonce++;
+      }
+      events.emit('mine:progress', { index: block.index, nonce: block.nonce, hash: block.hash });
+      await sleep(MINE_PAUSE_MS);
+      if (gen !== generation) return null;
+    }
+  } finally {
+    mining = false;
+  }
+}
+
+export function mineNow() {
+  return isMining() ? Promise.resolve(null) : mineBlockAnimated();
+}
+
 export function startMiner() {
   if (timer) return;
-  timer = setInterval(mineBlock, mineIntervalMs);
+  timer = setInterval(mineNow, mineIntervalMs);
 }
 
 export function stopMiner() {

@@ -46,6 +46,23 @@ function row(label, valueNode) {
   return r;
 }
 
+// Mining strip: idle / mining a block, with the current hash and its leading zeros highlighted.
+let mining = null; // { index, difficulty }
+function minerHash(h, difficulty) {
+  const box = $('miner-hash');
+  box.replaceChildren();
+  const zeros = (h.match(/^0*/) || [''])[0].length;
+  box.classList.toggle('hit', zeros >= difficulty);
+  if (zeros) box.appendChild(el('span', 'zeros', h.slice(0, zeros)));
+  box.append(h.slice(zeros));
+}
+function setMining(info) {
+  mining = info;
+  $('miner-strip').classList.toggle('active', !!info);
+  $('miner-title').textContent = info ? `Minando bloque #${info.index}` : 'Esperando transacciones…';
+  if (!info) { $('miner-nonce').textContent = '-'; $('miner-hash').replaceChildren(); }
+}
+
 function renderChain(s) {
   const root = $('chain');
   root.replaceChildren();
@@ -123,6 +140,28 @@ socket.on('mempool:add', (tx) => {
 });
 socket.on('block:mined', (b) => {
   lastBlockAt = Date.now();
+  if (mining && mining.index === b.index) {
+    $('miner-nonce').textContent = String(b.nonce);
+    minerHash(b.hash, b.difficulty);
+    mining = null;
+    $('miner-title').textContent = `Bloque #${b.index} minado`;
+    const strip = $('miner-strip');
+    strip.classList.remove('active', 'flash');
+    void strip.offsetWidth; // restart the animation
+    strip.classList.add('flash');
+    setTimeout(() => { strip.classList.remove('flash'); if (!mining) setMining(null); }, 1500);
+  }
   freshBlocks.add(b.hash);
   setTimeout(() => freshBlocks.delete(b.hash), 2000);
+});
+
+socket.on('mine:start', (info) => {
+  setMining(info);
+  $('miner-nonce').textContent = '0';
+  $('miner-hash').replaceChildren();
+});
+socket.on('mine:progress', (p) => {
+  if (!mining || p.index !== mining.index) return;
+  $('miner-nonce').textContent = String(p.nonce);
+  minerHash(p.hash, mining.difficulty);
 });

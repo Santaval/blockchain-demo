@@ -7,6 +7,7 @@ const ROLES = ['wallet', 'pantalla', 'admin'];
 const BROADCAST_MS = 200;
 const CHAIN_WINDOW = 30;
 const HISTORY_LIMIT = 30;
+const PROGRESS_MS = 100;
 
 const num = (n) => (n === Infinity ? '∞' : n);
 const nickOf = (addr) => state.accounts.get(addr)?.nick ?? addr;
@@ -85,6 +86,9 @@ export function attachSync(io) {
     timer = setTimeout(() => { timer = null; broadcast(); }, BROADCAST_MS);
   };
 
+  let progressTimer = null;
+  let pendingProgress = null;
+
   const onEvent = {
     'state:changed': schedule,
     reset: () => {
@@ -94,7 +98,23 @@ export function attachSync(io) {
       schedule();
     },
     'mempool:add': (tx) => io.to('pantalla').to('admin').emit('mempool:add', tx),
-    'block:mined': (block) => io.to('pantalla').to('admin').emit('block:mined', block),
+    'block:mined': (block) => {
+      pendingProgress = null; // drop stale progress once the block is mined
+      io.to('pantalla').to('admin').emit('block:mined', block);
+    },
+    'mine:start': (info) => {
+      pendingProgress = null;
+      io.to('pantalla').to('admin').emit('mine:start', info);
+    },
+    'mine:progress': (p) => {
+      pendingProgress = p; // always keep the latest value
+      if (progressTimer) return;
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        if (pendingProgress) io.to('pantalla').to('admin').emit('mine:progress', pendingProgress);
+        pendingProgress = null;
+      }, PROGRESS_MS);
+    },
     'tx:confirmed': (tx, block) => notify([tx.from, tx.to], 'tx:confirmed', { hash: tx.hash, block }),
     'tx:failed': (tx, block, reason) => notify([tx.from, tx.to], 'tx:failed', { hash: tx.hash, block, reason }),
   };
@@ -145,6 +165,8 @@ export function attachSync(io) {
   return () => {
     for (const [name, fn] of Object.entries(onEvent)) events.off(name, fn);
     clearTimeout(timer);
+    clearTimeout(progressTimer);
     timer = null;
+    progressTimer = null;
   };
 }
