@@ -55,12 +55,13 @@ export default {
       mutate(copy);
       const va = validateChain(copy);
       const vb = validateChainB(copy);
-      const fa = firstBad(va);
-      const fb = firstBad(vb);
-      const ok = same(va, vb) && fa?.index === tip && fa?.reason === reason;
+      // Judge the tampered block itself: the live chain may already be invalid earlier (admin tampering).
+      const ta = va[tip];
+      const tb = vb[tip];
+      const ok = same(va, vb) && !ta.valid && ta.reason === reason;
       await ctx.check(name, ok, ok
         ? `ambos rechazan el bloque #${tip}: ${reason}`
-        : `A: ${fa ? `#${fa.index} ${fa.reason}` : 'válida'} · B: ${fb ? `#${fb.index} ${fb.reason}` : 'válida'}`);
+        : `A: #${tip} ${ta.reason ?? 'válido'} · B: #${tip} ${tb.reason ?? 'válido'}`);
     }
     ctx.summary(agree === total ? `Los dos clientes coinciden en ${total}/${total} bloques y en las 4 cadenas manipuladas` : 'Los clientes discrepan');
   },

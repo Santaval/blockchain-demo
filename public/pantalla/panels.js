@@ -337,7 +337,7 @@ PANEL_RENDERERS.pruebas = (s, body) => {
   }
   if (bad) {
     const box = el('div', 'lab-fail');
-    box.appendChild(el('div', 'lab-fail-title', `Invariante violada · ${bad.name}`));
+    box.appendChild(el('div', 'lab-fail-title', bad.name.startsWith('Invariante violada') ? bad.name : `Invariante violada · ${bad.name}`));
     box.appendChild(el('pre', 'mono lab-fail-detail', String(bad.detail || '')));
     main.appendChild(box);
   }

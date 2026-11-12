@@ -68,6 +68,13 @@ test('multicliente: client B agrees with A on a valid chain and on tampered ones
   assert.equal(b.findIndex((v) => !v.valid), 2);
 });
 
+test('multicliente: still passes when the live chain was already tampered by the admin', async () => {
+  state.chain[1].txs[0].amount += 999; // like admin:tamper on an earlier block
+  const res = await run('multicliente');
+  assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
+  assert.match(res.cases[0].detail, /ambos ven la cadena inválida desde #1/);
+});
+
 test('fuzz-red: no crashes and nothing accepted that should be rejected', async () => {
   const res = await run('fuzz-red', 3);
   assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
