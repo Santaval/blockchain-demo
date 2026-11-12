@@ -1,7 +1,7 @@
 /* Wallet layout only; tokens and shared components come from /shared/theme.css. Mobile-first single column. */
-body { font-size: 16px; padding-bottom: 5rem; }
-.top { display: flex; align-items: center; gap: 1em; padding: .6em 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
-.brand { flex: 1; font-weight: 750; font-size: 1.25em; display: flex; align-items: center; gap: .4em; }
+body { font-size: 16px; padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+.top { display: flex; align-items: center; gap: .5em; padding: .6em 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.brand { flex: 1 0 auto; white-space: nowrap; font-weight: 750; font-size: 1.25em; display: flex; align-items: center; gap: .4em; }
 .logo { color: var(--accent); font-size: 1.2em; }
 #status[data-connected="true"] { background: var(--ok-bg); color: var(--ok); }
 #status[data-connected="false"] { background: var(--bad-bg); color: var(--bad); }
@@ -52,3 +52,12 @@ input:focus, select:focus { outline: 2px solid var(--accent-2); outline-offset: 
 .history .amt { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
 .history .in .amt { color: var(--ok); }
 .blink { animation: blink 1.4s ease-in-out infinite; }
+
+/* bottom tab bar: one section per screen */
+.top .chip { font-size: .75em; } #top-balance { font-variant-numeric: tabular-nums; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--border); box-shadow: var(--shadow); padding-bottom: env(safe-area-inset-bottom); }
+.tabbar button { position: relative; border: 0; background: none; min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .75em; font-weight: 600; color: var(--muted); cursor: pointer; border-top: 3px solid transparent; }
+.tabbar button .ti { font-size: 1.45em; line-height: 1; }
+.tabbar button.on { color: var(--accent); border-top-color: var(--accent); }
+.tabbar .dot { position: absolute; top: 8px; left: calc(50% + 10px); width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+.toast { bottom: calc(76px + env(safe-area-inset-bottom)); }

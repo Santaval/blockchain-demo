@@ -11,6 +11,7 @@
 <body>
   <header class="top">
     <div class="brand"><span class="logo">◈</span> Mi wallet</div>
+    <span id="top-balance" class="chip c-ok" hidden></span>
     <span id="status" class="chip" data-connected="false">Desconectado</span>
   </header>
   <main>
@@ -27,6 +28,7 @@
     </section>
 
     <div id="main" hidden>
+      <div class="view" data-view="inicio">
       <section class="card">
         <div class="node small k-out"><div class="ic">◈</div><div class="tx"><div class="ttl">Hola, <span id="nick-label"></span></div><div class="sub">Tu saldo en la cadena</div></div></div>
         <div class="body">
@@ -50,7 +52,9 @@
           </div>
         </div>
       </section>
+      </div>
 
+      <div class="view" data-view="enviar" hidden>
       <section class="card">
         <div class="node small k-trigger"><div class="ic">➤</div><div class="tx"><div class="ttl">Enviar</div><div class="sub">Monedas a un compañero</div></div></div>
         <form id="send-form" class="body" autocomplete="off">
@@ -63,8 +67,17 @@
         </form>
       </section>
 
-      <section id="contracts" hidden></section>
+      </div>
 
+      <div class="view" data-view="contratos" hidden>
+        <section id="contracts"></section>
+        <section id="contracts-empty" class="card">
+          <div class="node small k-tool"><div class="ic">⚙</div><div class="tx"><div class="ttl">Contratos</div><div class="sub">Votación, subasta y banco</div></div></div>
+          <p class="muted">No hay contratos activos todavía. Aparecerán aquí cuando el presentador los abra.</p>
+        </section>
+      </div>
+
+      <div class="view" data-view="historial" hidden>
       <section class="card">
         <div class="node small k-neutral"><div class="ic">☰</div><div class="tx"><div class="ttl">Historial</div><div class="sub">Tus transacciones</div></div></div>
         <div class="body">
@@ -72,8 +85,15 @@
           <p id="history-empty" class="muted">Aún no hay transacciones.</p>
         </div>
       </section>
+      </div>
     </div>
   </main>
+  <nav id="tabs" class="tabbar" hidden>
+    <button type="button" data-tab="inicio" class="on"><span class="ti">◈</span>Inicio</button>
+    <button type="button" data-tab="enviar"><span class="ti">➤</span>Enviar</button>
+    <button type="button" data-tab="contratos"><span class="ti">⚙</span>Contratos<span id="tab-dot" class="dot" hidden></span></button>
+    <button type="button" data-tab="historial"><span class="ti">☰</span>Historial</button>
+  </nav>
   <div id="toast" class="toast" hidden></div>
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/wallet/app.js"></script>
