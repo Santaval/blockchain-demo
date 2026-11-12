@@ -249,6 +249,81 @@ PANEL_RENDERERS.subasta = (s, body) => {
   body.append(main, side);
 };
 
+// Bank panel: reentrancy logs are replayed one by one (BANK_STEP_MS apart) so the balance visibly drops in a cascade.
+// Only logs that arrive live are queued; on page load the existing logs are shown instantly.
+const BANK = '0xBANCO', ATTACKER = '0xATACANTE', BANK_STEP_MS = 200, BANK_LINES = 14;
+const bank = { ready: false, shown: 0, lines: [], queue: [], timer: null };
+const bankView = () => (state?.contracts || []).find((c) => c.address === BANK)?.view;
+const isBankLog = (l) => l.contract === BANK || l.contract === ATTACKER;
+const quedan = (l) => (l.contract === BANK ? /quedan (\d+)$/.exec(l.message) : null);
+
+function bankInit(s) {
+  if (bank.ready) return;
+  bank.ready = true;
+  bank.lines = (s.contractLogs || []).filter(isBankLog).slice(-BANK_LINES);
+  bank.shown = Number(bankView()?.balance ?? 0);
+}
+function bankEnqueue(l) {
+  if (!isBankLog(l)) return;
+  bank.queue.push(l);
+  bank.timer ??= setInterval(bankStep, BANK_STEP_MS);
+}
+function bankStep() {
+  const l = bank.queue.shift();
+  if (l) {
+    bank.lines = [...bank.lines, l].slice(-BANK_LINES);
+    const m = quedan(l);
+    if (m) bank.shown = Number(m[1]);
+  }
+  if (!bank.queue.length) { // replay done: settle on the real balance
+    clearInterval(bank.timer);
+    bank.timer = null;
+    bank.shown = Number(bankView()?.balance ?? bank.shown);
+  }
+  paintBank();
+}
+function paintBank() {
+  const num = document.getElementById('bank-balance');
+  if (num) num.textContent = String(bank.shown);
+  const ul = document.getElementById('bank-log');
+  if (!ul) return;
+  ul.replaceChildren();
+  [...bank.lines].reverse().forEach((l) => {
+    const li = el('li', l.contract === ATTACKER ? 'atk' : l.message.startsWith('Revertido') ? 'revert' : '');
+    li.textContent = l.message;
+    ul.appendChild(li);
+  });
+  if (!bank.lines.length) ul.appendChild(el('li', 'more', 'Sin actividad'));
+}
+
+PANEL_RENDERERS.banco = (s, body) => {
+  bankInit(s);
+  const v = bankView();
+  if (!v) return void body.appendChild(el('div', 'placeholder', 'Sin banco'));
+  if (!bank.queue.length) bank.shown = Number(v.balance);
+  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+  const atk = (s.contracts || []).find((c) => c.address === ATTACKER)?.view;
+  const main = el('div', 'bank-main');
+  main.appendChild(el('div', 'bank-label', 'Saldo del banco'));
+  const num = el('div', 'bank-balance');
+  num.id = 'bank-balance';
+  main.appendChild(num);
+  if (atk && atk.lastLoot > 0) main.appendChild(el('div', 'bank-loot', `Botín: ${atk.lastLoot} para ${nick.get(atk.owner) || '?'} · ${atk.rounds} reentradas`));
+  main.appendChild(el('div', 'bank-quote', 'El código es ley · The DAO, 2016'));
+  const side = el('div', 'bank-side');
+  side.appendChild(el('h3', null, 'Depositantes'));
+  const dep = el('ul');
+  v.depositors.slice(0, 6).forEach((d) => dep.appendChild(el('li', null, `${nick.get(d.address) || d.nick}: ${d.amount}`)));
+  if (!v.depositors.length) dep.appendChild(el('li', 'more', 'Ninguno'));
+  side.appendChild(dep);
+  side.appendChild(el('h3', null, 'Registro'));
+  const log = el('ul', 'bank-log');
+  log.id = 'bank-log';
+  side.appendChild(log);
+  body.append(main, side);
+  paintBank();
+};
+
 function tickAuction() {
   const e = document.querySelector('.auc-count[data-ends-at]');
   if (!e) return;
@@ -286,6 +361,7 @@ function renderPanel(s) {
 
 function render(s) {
   state = s;
+  bankInit(s);
   const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
     s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length].join('|') + publicUrl;
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
@@ -318,6 +394,7 @@ socket.on('state:full', render);
 socket.on('contract:log', (entry) => {
   if (!state) return;
   state.contractLogs = [...(state.contractLogs || []), entry].slice(-60);
+  bankEnqueue(entry);
   sig.logs = null;
   renderContractLog(state);
   sig.logs = JSON.stringify(state.contractLogs) + (state.accounts || []).map((a) => a.address + a.nick).join();

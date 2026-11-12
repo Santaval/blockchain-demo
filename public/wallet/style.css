@@ -39,3 +39,4 @@ button:disabled { opacity:.5; }
 .auction-item { font-size:1.2rem; font-weight:600; margin:4px 0; }
 .auction-count { font-size:1.6rem; font-weight:800; margin:8px 0; }
 .auction-done { font-weight:700; font-size:1.1rem; margin:8px 0; }
+button.danger { background:var(--bad, #dc2626); color:#fff; }

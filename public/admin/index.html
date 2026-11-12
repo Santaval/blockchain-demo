@@ -80,6 +80,16 @@
     </section>
 
     <section class="card">
+      <h2>Banco <span id="b-state" class="info"></span></h2>
+      <button id="b-toggle" type="button">Habilitar botón de ataque</button>
+      <label for="b-amount">Monto (1 a 1000)</label>
+      <input id="b-amount" type="number" min="1" max="1000" value="10">
+      <button id="b-seed" type="button">Sembrar banco (Sistema deposita)</button>
+      <button id="b-attack" type="button" class="danger">Lanzar ataque desde 0xHACKER</button>
+      <p id="b-info" class="info"></p>
+    </section>
+
+    <section class="card">
       <h2>Otros</h2>
       <button id="gift" type="button">Regalar +50 a todos</button>
       <button id="reset" type="button" class="danger">Reset total</button>

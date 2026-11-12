@@ -177,6 +177,21 @@ setInterval(() => {
   $('a-state').textContent = left > 0 ? `· abierta · ${left}s` : '· cerrando…';
 }, 500);
 
+// Banco: toggle the wallet attack button, seed the bank, launch the attack from 0xHACKER.
+let attackEnabled = false;
+$('b-toggle').addEventListener('click', () => send('admin:attack-enabled', { enabled: !attackEnabled }, attackEnabled ? 'Botón de ataque oculto' : 'Botón de ataque habilitado'));
+$('b-seed').addEventListener('click', () => send('admin:bank-seed', { amount: Number($('b-amount').value) }, 'Depósito del sistema enviado'));
+$('b-attack').addEventListener('click', () => send('admin:attack', { amount: Number($('b-amount').value) }, 'Ataque enviado al mempool'));
+function renderBank(s) {
+  const bank = (s.contracts || []).find((c) => c.address === '0xBANCO')?.view;
+  const atk = (s.contracts || []).find((c) => c.address === '0xATACANTE')?.view;
+  if (!bank || !atk) return;
+  attackEnabled = atk.enabled;
+  $('b-toggle').textContent = attackEnabled ? 'Deshabilitar botón de ataque' : 'Habilitar botón de ataque';
+  $('b-state').textContent = attackEnabled ? '· ataque habilitado' : '· ataque oculto';
+  $('b-info').textContent = `Saldo del banco: ${bank.balance}` + (atk.lastLoot ? ` · último botín: ${atk.lastLoot} (${atk.rounds} reentradas)` : '');
+}
+
 function render(s) {
   if (!loggedIn) return;
   panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
@@ -190,6 +205,7 @@ function render(s) {
   renderTamper(s);
   renderVoting(s);
   renderAuction(s);
+  renderBank(s);
 }
 socket.on('state:full', render);
 socket.on('mine:start', () => { $('mining').hidden = false; $('remine-nonce').textContent = '0'; });

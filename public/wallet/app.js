@@ -282,6 +282,70 @@ CARD_RENDERERS['0xSUBASTA'] = (card, c) => {
   card.append(input, b);
 };
 
+CARD_RENDERERS['0xBANCO'] = (card, c) => {
+  const add = (cls, text) => {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    card.appendChild(p);
+  };
+  add('muted', `Saldo del banco: ${c.view.balance}`);
+  add('auction-item', `Tu depósito: ${c.me?.myDeposit ?? 0}`);
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Monto a depositar';
+  const dep = document.createElement('button');
+  dep.type = 'button';
+  dep.textContent = 'Depositar';
+  const out = document.createElement('button');
+  out.type = 'button';
+  out.className = 'secondary';
+  out.textContent = 'Retirar';
+  out.disabled = !(c.me?.myDeposit > 0);
+  const run = async (method, amount) => {
+    dep.disabled = out.disabled = true;
+    const res = await callContract(c.address, method, [], amount);
+    if (res?.ok) input.value = '';
+    dep.disabled = false;
+    out.disabled = !(c.me?.myDeposit > 0);
+  };
+  dep.addEventListener('click', () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe un monto válido');
+    run('depositar', amount);
+  });
+  out.addEventListener('click', () => run('retirar', 0));
+  card.append(input, dep, out);
+};
+
+CARD_RENDERERS['0xATACANTE'] = (card, c) => {
+  const p = document.createElement('p');
+  p.className = 'muted';
+  p.textContent = 'Deposita en el banco y trata de sacar más de lo que pusiste.';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Monto del ataque';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'danger';
+  b.textContent = 'Atacar';
+  b.addEventListener('click', async () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe un monto válido');
+    b.disabled = true;
+    const res = await callContract(c.address, 'atacar', [], amount);
+    if (res?.ok) input.value = '';
+    b.disabled = false;
+  });
+  card.append(p, input, b);
+};
+
 function updateAuctionCountdown() {
   const e = document.querySelector('.auction-count');
   if (!e) return;
