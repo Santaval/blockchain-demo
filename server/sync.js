@@ -13,13 +13,22 @@ const PROGRESS_MS = 100;
 const num = (n) => (n === Infinity ? '∞' : n);
 const nickOf = (addr) => state.accounts.get(addr)?.nick ?? addr;
 
+// Status of each tx in the latest block, for the projector's network panel.
+function lastBlockStatus() {
+  const last = state.chain[state.chain.length - 1];
+  return (last?.txs ?? []).map((t) => {
+    const st = state.txStatus.get(t.hash) ?? { status: 'pending' };
+    return { hash: t.hash, status: st.status, reason: st.reason };
+  });
+}
+
 export function buildFullState() {
   const validity = validateChain(); // whole chain, then sliced to match the window
   return {
     chain: state.chain.slice(-CHAIN_WINDOW),
     validity: validity.slice(-CHAIN_WINDOW),
     mempool: state.mempool,
-    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, balance: num(getBalance(a.address)) })),
+    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, system: !!a.system, balance: num(getBalance(a.address)) })),
     contracts: [],
     participants: 0, // overwritten by attachSync (needs socket info)
     height: state.chain.length - 1,
@@ -29,6 +38,7 @@ export function buildFullState() {
     minerRunning: isMinerRunning(),
     mining: isMining(),
     tampered: isTampered(),
+    lastBlockStatus: lastBlockStatus(),
   };
 }
 

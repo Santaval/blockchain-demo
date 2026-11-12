@@ -22,6 +22,7 @@ Node 20, Express, Socket.io, HTML + JS vanilla (sin build step), `qrcode` en el 
 
 - `PORT` (por defecto 3000)
 - `ADMIN_PASSWORD`
+- `PUBLIC_URL` (URL pública que codifica el QR; si no se define se deriva de la petición)
 
 ## Desarrollo
 

@@ -14,7 +14,10 @@
     <div class="stat"><span class="label">Dificultad</span><span class="num" id="difficulty">-</span></div>
     <div class="stat"><span class="label">Próximo bloque</span><span class="num" id="countdown">-</span></div>
     <span id="status" class="badge" data-connected="false">Desconectado</span>
-    <div id="qr-slot" class="qr-slot" aria-hidden="true"></div>
+    <div id="qr-slot" class="qr-slot">
+      <img id="qr-small" src="/qr.svg" alt="QR para unirse">
+      <span id="url-small" class="url-small mono"></span>
+    </div>
   </header>
 
   <div id="tamper-banner" class="tamper-banner" hidden>⚠ Cadena manipulada</div>
@@ -30,14 +33,17 @@
     <div id="miner-hash" class="miner-hash mono"></div>
   </section>
 
-  <section id="main-panel" class="main-panel" data-panel="qr">
-    <h2 id="main-panel-title" class="main-panel-title"></h2>
-  </section>
+  <div class="lower">
+    <section id="main-panel" class="main-panel" data-panel="qr">
+      <h2 id="main-panel-title" class="main-panel-title"></h2>
+      <div id="main-panel-body" class="main-panel-body"></div>
+    </section>
 
-  <section class="mempool-section">
-    <h2>Mempool <span id="mempool-count" class="count">0</span></h2>
-    <ul id="mempool" class="mempool"></ul>
-  </section>
+    <section class="mempool-section">
+      <h2>Mempool <span id="mempool-count" class="count">0</span></h2>
+      <ul id="mempool" class="mempool"></ul>
+    </section>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/pantalla/app.js"></script>
