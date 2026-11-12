@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server } from 'socket.io';
 import { PORT } from './config.js';
+import { startMiner } from './miner.js';
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const ROLES = ['wallet', 'pantalla', 'admin'];
@@ -30,4 +31,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log(`[socket] ${socket.id} (${role}) disconnected`));
 });
 
-server.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Servidor en http://localhost:${PORT}`);
+  startMiner();
+});
