@@ -70,6 +70,16 @@
     </section>
 
     <section class="card">
+      <h2>Subasta <span id="a-state" class="info"></span></h2>
+      <label for="a-item">Artículo</label>
+      <input id="a-item" maxlength="60">
+      <label for="a-seconds">Duración (segundos, 15 a 600)</label>
+      <input id="a-seconds" type="number" min="15" max="600" value="90">
+      <button id="a-open" type="button" class="primary">Abrir subasta</button>
+      <p id="a-info" class="info"></p>
+    </section>
+
+    <section class="card">
       <h2>Otros</h2>
       <button id="gift" type="button">Regalar +50 a todos</button>
       <button id="reset" type="button" class="danger">Reset total</button>

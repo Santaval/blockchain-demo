@@ -156,6 +156,27 @@ function renderVoting(s) {
   $('v-counts').textContent = v.options.length ? v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ') : 'Sin configurar';
 }
 
+// Subasta: status is refreshed on every state push; the countdown ticks locally.
+$('a-open').addEventListener('click', () => send('admin:auction-open', {
+  item: $('a-item').value, seconds: Number($('a-seconds').value),
+}, 'Subasta abierta'));
+let auctionEnds = 0;
+function renderAuction(s) {
+  const v = (s.contracts || []).find((c) => c.address === '0xSUBASTA')?.view;
+  if (!v) return;
+  auctionEnds = v.open ? v.endsAt : 0;
+  $('a-open').disabled = v.open;
+  $('a-state').textContent = v.open ? '· abierta' : v.winner ? '· cerrada' : '· sin abrir';
+  $('a-info').textContent = v.winner
+    ? `Ganó ${v.winner.nick} con ${v.winner.amount} por "${v.item}"`
+    : v.item ? `"${v.item}" · oferta más alta: ${v.highest ? `${v.highest.nick} (${v.highest.amount})` : 'ninguna'}` : '';
+}
+setInterval(() => {
+  if (!auctionEnds) return;
+  const left = Math.max(0, Math.ceil((auctionEnds - Date.now()) / 1000));
+  $('a-state').textContent = left > 0 ? `· abierta · ${left}s` : '· cerrando…';
+}, 500);
+
 function render(s) {
   if (!loggedIn) return;
   panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
@@ -168,6 +189,7 @@ function render(s) {
   $('interval').value = String(s.mineIntervalMs);
   renderTamper(s);
   renderVoting(s);
+  renderAuction(s);
 }
 socket.on('state:full', render);
 socket.on('mine:start', () => { $('mining').hidden = false; $('remine-nonce').textContent = '0'; });

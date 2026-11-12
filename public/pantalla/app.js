@@ -223,6 +223,39 @@ PANEL_RENDERERS.votacion = (s, body) => {
   body.append(main, list);
 };
 
+PANEL_RENDERERS.subasta = (s, body) => {
+  const v = (s.contracts || []).find((x) => x.address === '0xSUBASTA')?.view;
+  if (!v || !v.item) return void body.appendChild(el('div', 'placeholder', 'Sin subasta abierta'));
+  const main = el('div', 'auc-main');
+  main.appendChild(el('div', 'auc-item', v.item));
+  if (v.open) {
+    const cd = el('div', 'auc-count');
+    cd.dataset.endsAt = v.endsAt;
+    main.appendChild(cd);
+    tickAuction();
+  } else main.appendChild(el('div', 'auc-count done', 'CERRADA'));
+  main.appendChild(el('div', 'auc-highest', v.highest ? `${v.highest.amount} · ${v.highest.nick}` : 'Sin ofertas'));
+  if (v.winner) main.appendChild(el('div', 'auc-winner', `Ganó ${v.winner.nick} · el contrato pagó ${v.winner.amount} al Presentador`));
+  const side = el('div', 'auc-side');
+  const list = (title, items, fmt) => {
+    side.appendChild(el('h3', null, `${title} (${items.length})`));
+    const ul = el('ul');
+    [...items].reverse().slice(0, 8).forEach((x) => ul.appendChild(el('li', null, fmt(x))));
+    if (!items.length) ul.appendChild(el('li', 'more', 'Ninguno'));
+    side.appendChild(ul);
+  };
+  list('Ofertas', v.bids, (b) => `${b.nick} ofertó ${b.amount}`);
+  list('Reembolsos', v.refunds, (r) => `${r.nick} recuperó ${r.amount}`);
+  body.append(main, side);
+};
+
+function tickAuction() {
+  const e = document.querySelector('.auc-count[data-ends-at]');
+  if (!e) return;
+  const left = Math.max(0, Math.ceil((Number(e.dataset.endsAt) - Date.now()) / 1000));
+  e.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'Cerrando…';
+}
+
 const MAX_LOGS = 8;
 function renderContractLog(s) {
   const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
@@ -279,6 +312,7 @@ function tick() {
   $('countdown').textContent = left > 0 ? `~${left}s` : 'minando…';
 }
 setInterval(tick, 250);
+setInterval(tickAuction, 250);
 
 socket.on('state:full', render);
 socket.on('contract:log', (entry) => {

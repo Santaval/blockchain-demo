@@ -5,6 +5,7 @@ import { state, events, createSystemTx, reset } from './state.js';
 import { setDifficulty, setMineInterval, startMiner, stopMiner, isMinerRunning, isMining, isTampered, mineNow } from './miner.js';
 import { tamper, remine, restore } from './tamper.js';
 import { configureVoting, setVotingOpen } from './contracts/voting.js';
+import { openAuction } from './contracts/auction.js';
 
 export const PANELS = ['qr', 'red', 'votacion', 'subasta', 'banco'];
 const GIFT_AMOUNT = 50;
@@ -91,6 +92,8 @@ export function registerAdminHandlers(socket, ctx) {
   command('voting-config', voting(configureVoting));
   command('voting-open', voting(() => setVotingOpen(true)));
   command('voting-close', voting(() => setVotingOpen(false)));
+
+  command('auction-open', (p) => { const r = openAuction(p); if (r.ok) changed(); return r; });
 
   command('tamper', (p) => tamper(p));
   command('remine', (p) => remine(p));

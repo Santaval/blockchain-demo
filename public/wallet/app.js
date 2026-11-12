@@ -243,6 +243,53 @@ CARD_RENDERERS['0xVOTACION'] = (card, c) => {
   card.appendChild(counts);
 };
 
+CARD_RENDERERS['0xSUBASTA'] = (card, c) => {
+  const v = c.view;
+  const add = (cls, text) => {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    card.appendChild(p);
+    return p;
+  };
+  add('auction-item', v.item);
+  add('muted', v.highest ? `Oferta más alta: ${v.highest.amount} (${v.highest.nick})` : 'Sin ofertas todavía');
+  if (!v.open) {
+    add('auction-done', v.winner ? `Subasta cerrada. Ganó ${v.winner.nick} con ${v.winner.amount}` : 'Subasta cerrada');
+    return;
+  }
+  const count = add('auction-count', '');
+  count.dataset.endsAt = v.endsAt;
+  updateAuctionCountdown();
+  if (c.me?.isHighest) add('vote-done', 'Vas ganando');
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Tu oferta';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = 'Ofertar';
+  b.addEventListener('click', async () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe una oferta válida');
+    b.disabled = true;
+    const res = await callContract(c.address, 'ofertar', [], amount);
+    if (res?.ok) input.value = '';
+    b.disabled = false;
+  });
+  card.append(input, b);
+};
+
+function updateAuctionCountdown() {
+  const e = document.querySelector('.auction-count');
+  if (!e) return;
+  const left = Math.max(0, Math.ceil((Number(e.dataset.endsAt) - Date.now()) / 1000));
+  e.textContent = left > 0 ? `Quedan ${left} s` : 'Cerrando…';
+}
+setInterval(updateAuctionCountdown, 500);
+
 // Builds, signs and submits a tx that calls a contract method. Returns the ack ({ ok, reason }).
 async function callContract(address, method, args = [], amount = 0) {
   if (sending || !state) return { ok: false, reason: 'Espera un momento' };
