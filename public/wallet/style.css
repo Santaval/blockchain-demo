@@ -55,9 +55,18 @@ input:focus, select:focus { outline: 2px solid var(--accent-2); outline-offset: 
 
 /* bottom tab bar: one section per screen */
 .top .chip { font-size: .75em; } #top-balance { font-variant-numeric: tabular-nums; }
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--border); box-shadow: var(--shadow); padding-bottom: env(safe-area-inset-bottom); }
-.tabbar button { position: relative; border: 0; background: none; min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .75em; font-weight: 600; color: var(--muted); cursor: pointer; border-top: 3px solid transparent; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--panel); border-top: 1px solid var(--border); box-shadow: var(--shadow); padding-bottom: env(safe-area-inset-bottom); }
+.tabbar button { position: relative; border: 0; background: none; min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7em; font-weight: 600; padding: 0 2px; color: var(--muted); cursor: pointer; border-top: 3px solid transparent; }
 .tabbar button .ti { font-size: 1.45em; line-height: 1; }
 .tabbar button.on { color: var(--accent); border-top-color: var(--accent); }
 .tabbar .dot { position: absolute; top: 8px; left: calc(50% + 10px); width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
 .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+
+/* mining tab */
+.mine-status { font-weight: 600; }
+.hash-line { color: var(--muted); }
+.hash-line .zeros { color: var(--ok); font-weight: 800; }
+.hash-line.hit { color: var(--ok); }
+.warn-card { margin: 0; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
+.win-card { margin: 0; padding: 18px 12px; border-radius: 12px; text-align: center; font-size: 1.4rem; font-weight: 800; background: var(--ok-bg); color: var(--ok); }
+#mine-btn.stop { background: var(--panel-2); border-color: var(--border); color: var(--text); }

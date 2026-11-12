@@ -69,6 +69,24 @@
 
       </div>
 
+      <div class="view" data-view="minar" hidden>
+      <section class="card">
+        <div class="node small k-ai"><div class="ic">⛏</div><div class="tx"><div class="ttl">Minar</div><div class="sub">Compite por el próximo bloque</div></div></div>
+        <div class="body">
+          <p id="mine-warn" class="warn-card c-warn" hidden></p>
+          <p id="mine-win" class="win-card" hidden></p>
+          <button id="mine-btn" type="button" class="btn primary">Empezar a minar</button>
+          <p id="mine-status" class="mine-status muted">Pulsa el botón para unirte a los mineros.</p>
+          <div id="mine-live" hidden>
+            <p class="small muted">Nonce: <b id="mine-nonce" class="mono">0</b> · Intentos: <b id="mine-tried" class="mono">0</b></p>
+            <code id="mine-hash" class="keybox hash-line">-</code>
+          </div>
+          <p class="small">Bloques ganados: <b id="mine-won">0</b> <span class="muted">(+<span id="mine-reward">10</span> c/u)</span></p>
+          <p class="muted small">Mantén la pantalla encendida mientras minas</p>
+        </div>
+      </section>
+      </div>
+
       <div class="view" data-view="contratos" hidden>
         <section id="contracts"></section>
         <section id="contracts-empty" class="card">
@@ -91,6 +109,7 @@
   <nav id="tabs" class="tabbar" hidden>
     <button type="button" data-tab="inicio" class="on"><span class="ti">◈</span>Inicio</button>
     <button type="button" data-tab="enviar"><span class="ti">➤</span>Enviar</button>
+    <button type="button" data-tab="minar"><span class="ti">⛏</span>Minar<span id="mine-dot" class="dot" hidden></span></button>
     <button type="button" data-tab="contratos"><span class="ti">⚙</span>Contratos<span id="tab-dot" class="dot" hidden></span></button>
     <button type="button" data-tab="historial"><span class="ti">☰</span>Historial</button>
   </nav>

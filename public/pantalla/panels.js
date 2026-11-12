@@ -93,6 +93,18 @@ function panelNetwork(s, body) {
     ol.appendChild(li);
   });
   rank.appendChild(ol);
+  const miners = (s.miners || []).slice(0, 5);
+  if (miners.length) {
+    rank.appendChild(el('h3', null, 'Mineros'));
+    const ml = el('ol', 'ranking miners');
+    miners.forEach((m) => {
+      const li = el('li');
+      li.appendChild(el('span', 'rk-name', (m.mining ? '⛏ ' : '') + m.nick));
+      li.appendChild(el('span', 'rk-bal', `${m.won} ${m.won === 1 ? 'bloque' : 'bloques'}`));
+      ml.appendChild(li);
+    });
+    rank.appendChild(ml);
+  }
   body.append(detail, rank);
 }
 

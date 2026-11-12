@@ -216,6 +216,9 @@ function render(s) {
   $('height').textContent = String(s.height);
   $('mempool').textContent = String((s.mempool || []).length);
   $('mining').hidden = !s.mining;
+  const nMiners = s.pool?.miners?.length ?? 0;
+  $('miners').hidden = nMiners === 0;
+  $('miners').textContent = `${nMiners} ${nMiners === 1 ? 'minero' : 'mineros'}`;
   markSeg(diffButtons, s.difficulty);
   markSeg(intervalButtons, s.mineIntervalMs);
   renderTamper(s);
