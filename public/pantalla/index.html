@@ -4,10 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pantalla · Blockchain Demo</title>
+  <link rel="stylesheet" href="/pantalla/style.css">
 </head>
 <body>
-  <h1>Pantalla</h1>
-  <p id="status">Desconectado</p>
+  <header class="topbar">
+    <h1>Blockchain Demo</h1>
+    <div class="stat"><span class="label">Participantes</span><span class="num" id="participants">0</span></div>
+    <div class="stat"><span class="label">Altura</span><span class="num" id="height">0</span></div>
+    <div class="stat"><span class="label">Dificultad</span><span class="num" id="difficulty">-</span></div>
+    <div class="stat"><span class="label">Próximo bloque</span><span class="num" id="countdown">-</span></div>
+    <span id="status" class="badge" data-connected="false">Desconectado</span>
+    <div id="qr-slot" class="qr-slot" aria-hidden="true"></div>
+  </header>
+
+  <section class="chain-section">
+    <h2>Cadena</h2>
+    <div id="chain" class="chain"></div>
+  </section>
+
+  <section class="mempool-section">
+    <h2>Mempool <span id="mempool-count" class="count">0</span></h2>
+    <ul id="mempool" class="mempool"></ul>
+  </section>
+
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/pantalla/app.js"></script>
 </body>
