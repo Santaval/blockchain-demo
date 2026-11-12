@@ -22,6 +22,10 @@ Node 20, Express, Socket.io, HTML + JS vanilla (sin build step), `qrcode` en el 
 
 - `PORT` (por defecto 3000)
 - `ADMIN_PASSWORD`
+- `POOL_REWARD` (por defecto 10): monedas que gana el participante que encuentra un bloque
+- `POOL_HASH_RATE` (por defecto 4000): hashes por segundo de cada celular minando
+- `POOL_MAX_DIFFICULTY` (por defecto 4): por encima de esta dificultad los celulares dejan de minar y el servidor mina solo
+- `POOL_TIMEOUT_MS` (por defecto 60000): si nadie encuentra el bloque en este tiempo, el servidor lo mina
 - `PUBLIC_URL` (URL pública que codifica el QR; si no se define se deriva de la petición)
 
 ## Desarrollo

@@ -4,6 +4,8 @@ import { submitTx } from './validator.js';
 import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining, isTampered } from './miner.js';
 import { contractsView, contractsViewFor, getLogs, getInternalTransfers } from './contracts/engine.js';
 import { registerAdminHandlers, getPanel } from './admin.js';
+import * as pool from './pool.js';
+import { POOL_REWARD, POOL_HASH_RATE } from './config.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
 const BROADCAST_MS = 200;
@@ -41,7 +43,15 @@ export function buildFullState() {
     mining: isMining(),
     tampered: isTampered(),
     lastBlockStatus: lastBlockStatus(),
+    pool: pool.poolState(),
+    miners: pool.leaderboard(),
   };
+}
+
+// Pool info for one wallet (also the payload of the `pool:state` event).
+export function walletPool(address) {
+  const { enabled, reason, etaSeconds } = pool.poolState();
+  return { enabled, reason, etaSeconds, mining: pool.isMiner(address), won: pool.blocksWon(address), reward: POOL_REWARD, rate: POOL_HASH_RATE };
 }
 
 export function buildWalletState(address) {
@@ -60,6 +70,7 @@ export function buildWalletState(address) {
         amount: t.amount, timestamp: t.timestamp, status: st.status,
       };
       if (t.call) item.call = t.call;
+      if (t.coinbase) item.reward = true;
       if (st.block !== undefined) item.block = st.block;
       if (st.reason) item.reason = st.reason;
       return item;
@@ -78,6 +89,7 @@ export function buildWalletState(address) {
     balance: getBalance(address), available: availableBalance(address),
     nonce: expectedNonce(address), height: state.chain.length - 1,
     history: merged, nicks: listNicks(), contracts: contractsViewFor(address),
+    pool: walletPool(address),
   };
 }
 
@@ -89,6 +101,7 @@ export function attachSync(io) {
   const notify = (addresses, event, payload) => {
     for (const addr of new Set(addresses)) socketsOf(addr).forEach((s) => s.emit(event, payload));
   };
+  const emitTo = (ids, event, payload) => ids.forEach((id) => io.sockets.sockets.get(id)?.emit(event, payload));
   const sendFull = (socket) => {
     const full = buildFullState();
     full.participants = new Set(walletOf.values()).size;
@@ -121,6 +134,17 @@ export function attachSync(io) {
 
   const onEvent = {
     'state:changed': schedule,
+    'pool:job': ({ sockets, job }) => emitTo(sockets, 'pool:job', job),
+    'pool:end': ({ reason, sockets }) => emitTo(sockets, 'pool:end', { reason }),
+    'pool:won': (won) => {
+      io.to('pantalla').to('admin').emit('pool:won', won);
+      for (const id of walletOf.keys()) io.sockets.sockets.get(id)?.emit('pool:won', won);
+    },
+    'pool:state': () => {
+      for (const [id, address] of walletOf) {
+        if (pool.isMiner(address)) io.sockets.sockets.get(id)?.emit('pool:state', walletPool(address));
+      }
+    },
     reset: () => {
       const ids = [...walletOf.keys()];
       walletOf.clear();
@@ -186,7 +210,20 @@ export function attachSync(io) {
       socket.emit('tx:rejected', { hash, reason: res.reason });
     });
 
+    // Pool mining (wallets only). Acks: { ok, reason? }.
+    const walletEvent = (name, fn) => socket.on(name, (payload, ack) => {
+      const reply = typeof ack === 'function' ? ack : () => {};
+      const address = walletOf.get(socket.id);
+      if (role !== 'wallet' || !address) return reply({ ok: false, reason: 'Wallet no registrada' });
+      reply(fn(address, payload ?? {}));
+    });
+    walletEvent('pool:join', (address) => pool.join(address, socket.id));
+    walletEvent('pool:leave', (address) => { pool.leave(address, socket.id); return { ok: true }; });
+    walletEvent('pool:submit', (address, p) => pool.submit(address, p));
+    walletEvent('pool:progress', (address, p) => { pool.progress(address, p); return { ok: true }; });
+
     socket.on('disconnect', () => {
+      pool.leaveSocket(socket.id);
       if (walletOf.delete(socket.id)) schedule();
     });
 

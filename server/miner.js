@@ -10,7 +10,10 @@ let timer = null;
 let contractExecutor = executeTx;
 
 export const getDifficulty = () => difficulty;
-export const setDifficulty = (n) => { difficulty = n; };
+export function setDifficulty(n) {
+  difficulty = n;
+  events.emit('difficulty:changed', n);
+}
 export const getMineInterval = () => mineIntervalMs;
 export function setMineInterval(ms) {
   mineIntervalMs = ms;
@@ -29,7 +32,7 @@ function applyTx(tx, env) {
 }
 
 // Step 1: pick the txs without removing them, so they stay visible while mining runs.
-function selectTxs() {
+export function selectTxs() {
   const txs = state.mempool.slice(0, MAX_TXS_PER_BLOCK);
   const index = state.chain.length;
   return {
@@ -39,9 +42,10 @@ function selectTxs() {
 }
 
 // Step 3: remove the txs from the mempool, apply them, push the block and announce it.
-function commit(block) {
+// A pool block starts with a coinbase tx that was never in the mempool, so only `mempoolCount` txs are spliced.
+export function commit(block, mempoolCount = block.txs.length) {
   const { txs, index } = block;
-  state.mempool.splice(0, txs.length);
+  state.mempool.splice(0, mempoolCount);
   const results = txs.map((tx) => {
     let result;
     try { result = applyTx(tx, { time: block.timestamp, block: index }) ?? { ok: false, reason: 'Error al aplicar' }; }
@@ -77,12 +81,28 @@ let tampered = false;
 events.on('reset', () => { generation++; mining = false; tampered = false; });
 export const isMining = () => mining;
 export const isTampered = () => tampered;
+export const getGeneration = () => generation;
+
+// Shared "busy" flag: server mining and pool rounds both hold it. Returns the generation, or null if busy.
+export function acquireMining() {
+  if (mining || tampered) return null;
+  mining = true;
+  return generation;
+}
+export function releaseMining(gen) {
+  if (gen === generation) mining = false;
+}
+
+// A pool round (pool.js) registers itself here; mineNow() asks it first. Returns true if it started a round.
+let roundStarter = null;
+export function setRoundStarter(fn) { roundStarter = fn; }
 
 // Tampering (or restoring) aborts any in-flight run: it must never commit on top of an edited chain.
 export function setTampered(value) {
   tampered = value;
   generation++;
   mining = false;
+  events.emit('mining:aborted');
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -136,7 +156,9 @@ export async function remineBlock(index) {
 }
 
 export function mineNow() {
-  return isMining() ? Promise.resolve(null) : mineBlockAnimated();
+  if (isMining()) return Promise.resolve(null);
+  if (roundStarter?.()) return Promise.resolve(null); // a pool round mines it instead
+  return mineBlockAnimated();
 }
 
 export function startMiner() {
