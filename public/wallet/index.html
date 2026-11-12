@@ -4,10 +4,68 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wallet · Blockchain Demo</title>
+  <link rel="stylesheet" href="/wallet/style.css">
 </head>
 <body>
-  <h1>Wallet</h1>
-  <p id="status">Desconectado</p>
+  <main>
+    <header class="top">
+      <h1>Mi wallet</h1>
+      <span id="status" class="badge" data-connected="false">Desconectado</span>
+    </header>
+
+    <p id="fatal" class="error" hidden></p>
+
+    <section id="onboarding" class="card" hidden>
+      <h2>Crea tu wallet</h2>
+      <form id="onboard-form" autocomplete="off">
+        <label for="nick">Tu apodo</label>
+        <input id="nick" maxlength="20" required placeholder="Ej: Ana">
+        <button type="submit" id="onboard-btn">Crear wallet</button>
+        <p id="onboard-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <div id="main" hidden>
+      <section class="card">
+        <p class="muted">Hola, <strong id="nick-label"></strong></p>
+        <button id="address" class="addr" type="button" title="Toca para copiar"></button>
+        <p class="muted small">Toca la dirección para copiarla</p>
+        <p class="balance"><span id="balance">0</span> <small>monedas</small></p>
+        <p id="available-row" class="muted" hidden>Disponible: <strong id="available"></strong></p>
+        <p class="muted">Bloque actual: <strong id="height">0</strong></p>
+      </section>
+
+      <section class="card">
+        <button id="keys-toggle" type="button" class="secondary">Ver mis llaves</button>
+        <div id="keys" hidden>
+          <p class="warn">Nunca compartas tu llave privada</p>
+          <label>Llave pública</label>
+          <code id="pub" class="mono"></code>
+          <label>Llave privada (fragmento)</label>
+          <code id="priv" class="mono"></code>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Enviar</h2>
+        <form id="send-form" autocomplete="off">
+          <label for="to">Para</label>
+          <select id="to" required></select>
+          <label for="amount">Monto</label>
+          <input id="amount" type="number" inputmode="numeric" min="1" step="1" required placeholder="0">
+          <button type="submit" id="send-btn">Enviar</button>
+          <p id="send-error" class="error" hidden></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Historial</h2>
+        <ul id="history" class="history"></ul>
+        <p id="history-empty" class="muted">Aún no hay transacciones.</p>
+      </section>
+    </div>
+  </main>
+  <div id="toast" class="toast" hidden></div>
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/wallet/app.js"></script>
 </body>
