@@ -90,3 +90,9 @@ h2 { font-size: 1.1rem; color: var(--muted); font-weight: 600; margin-bottom: 0.
 @keyframes flash { from { background: #1f6f66; border-color: var(--accent); } to { background: var(--panel); } }
 @keyframes greenflash { 0% { background: #1d7a3e; border-color: var(--ok); box-shadow: 0 0 24px var(--ok); } 100% { background: var(--panel); box-shadow: none; } }
 @keyframes pop { 0% { box-shadow: 0 0 0 0 var(--accent); transform: scale(1.05); } 100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); } }
+
+.main-panel {
+  flex: 0 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 0.6rem 1rem; text-align: center;
+}
+.main-panel-title { margin: 0; font-size: 1.6rem; color: var(--accent); }

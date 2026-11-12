@@ -110,6 +110,8 @@ export function startMiner() {
   timer = setInterval(mineNow, mineIntervalMs);
 }
 
+export const isMinerRunning = () => timer !== null;
+
 export function stopMiner() {
   clearInterval(timer);
   timer = null;

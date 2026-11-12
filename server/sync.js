@@ -1,7 +1,8 @@
 // Socket.io sync: per-role rooms, throttled full-state broadcast, per-wallet lite state.
 import { state, events, registerWallet, getBalance, availableBalance, expectedNonce, listNicks } from './state.js';
 import { submitTx } from './validator.js';
-import { validateChain, getDifficulty, getMineInterval } from './miner.js';
+import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining } from './miner.js';
+import { registerAdminHandlers, getPanel } from './admin.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
 const BROADCAST_MS = 200;
@@ -24,6 +25,9 @@ export function buildFullState() {
     height: state.chain.length - 1,
     difficulty: getDifficulty(),
     mineIntervalMs: getMineInterval(),
+    panel: getPanel(),
+    minerRunning: isMinerRunning(),
+    mining: isMining(),
   };
 }
 
@@ -63,6 +67,11 @@ export function attachSync(io) {
     [...walletOf].filter(([, a]) => a === address).map(([id]) => io.sockets.sockets.get(id)).filter(Boolean);
   const notify = (addresses, event, payload) => {
     for (const addr of new Set(addresses)) socketsOf(addr).forEach((s) => s.emit(event, payload));
+  };
+  const sendFull = (socket) => {
+    const full = buildFullState();
+    full.participants = new Set(walletOf.values()).size;
+    socket.emit('state:full', full);
   };
   const sendState = (socket) => {
     const data = buildWalletState(walletOf.get(socket.id));
@@ -123,7 +132,8 @@ export function attachSync(io) {
   io.on('connection', (socket) => {
     const role = socket.handshake.query.role;
     if (!ROLES.includes(role)) { socket.disconnect(true); return; }
-    socket.join(role);
+    if (role !== 'admin') socket.join(role); // admin joins its room only after login
+    registerAdminHandlers(socket, { sendFull });
 
     socket.on('register', (payload, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
@@ -154,12 +164,8 @@ export function attachSync(io) {
       if (walletOf.delete(socket.id)) schedule();
     });
 
-    if (role !== 'wallet') {
-      // Initial snapshot right away for late joiners; the throttled path covers the rest.
-      const full = buildFullState();
-      full.participants = new Set(walletOf.values()).size;
-      socket.emit('state:full', full);
-    }
+    // Initial snapshot right away for late joiners; the throttled path covers the rest.
+    if (role === 'pantalla') sendFull(socket);
   });
 
   return () => {

@@ -13,6 +13,8 @@ const sig = { chain: null, mempool: null };
 const freshBlocks = new Set();
 const freshTxs = new Set();
 
+const PANEL_TITLES = { qr: 'Bienvenida', red: 'Red', votacion: 'Votación', subasta: 'Subasta', banco: 'Banco' };
+
 const short = (h) => (h ? h.slice(0, 10) + '…' : '');
 
 // Hash with leading zeros emphasized (built with DOM nodes, never innerHTML).
@@ -113,6 +115,9 @@ function renderMempool(s) {
 
 function render(s) {
   state = s;
+  const panel = PANEL_TITLES[s.panel] ? s.panel : 'qr';
+  $('main-panel').dataset.panel = panel; // #12 fills each panel
+  $('main-panel-title').textContent = PANEL_TITLES[panel];
   mineIntervalMs = s.mineIntervalMs || mineIntervalMs;
   $('participants').textContent = String(s.participants ?? 0);
   $('height').textContent = String(s.height ?? 0);
