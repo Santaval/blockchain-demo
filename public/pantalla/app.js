@@ -1,6 +1,6 @@
 import { connect, bindStatus } from '/shared/socket.js';
 
-const MAX_MEMPOOL = 12;
+const MAX_MEMPOOL = 8;
 const $ = (id) => document.getElementById(id);
 const socket = connect('pantalla');
 bindStatus(socket, $('status'));
@@ -9,9 +9,14 @@ let mineIntervalMs = 0;
 let lastBlockAt = Date.now();
 let lastHeight = null;
 let state = null;
-const sig = { chain: null, mempool: null };
+const sig = { chain: null, mempool: null, panel: null };
 const freshBlocks = new Set();
 const freshTxs = new Set();
+
+let publicUrl = '';
+fetch('/api/info').then((r) => r.json()).then((i) => { publicUrl = i.url; $('url-small').textContent = i.url.replace(/^https?:\/\//, ''); if (state) renderPanel(state); }).catch(() => {});
+
+const PANEL_TITLES = { qr: 'Bienvenida', red: 'Red', votacion: 'Votación', subasta: 'Subasta', banco: 'Banco' };
 
 const short = (h) => (h ? h.slice(0, 10) + '…' : '');
 
@@ -44,6 +49,23 @@ function row(label, valueNode) {
   r.appendChild(el('span', 'k', label));
   r.appendChild(valueNode);
   return r;
+}
+
+// Mining strip: idle / mining a block, with the current hash and its leading zeros highlighted.
+let mining = null; // { index, difficulty }
+function minerHash(h, difficulty) {
+  const box = $('miner-hash');
+  box.replaceChildren();
+  const zeros = (h.match(/^0*/) || [''])[0].length;
+  box.classList.toggle('hit', zeros >= difficulty);
+  if (zeros) box.appendChild(el('span', 'zeros', h.slice(0, zeros)));
+  box.append(h.slice(zeros));
+}
+function setMining(info) {
+  mining = info;
+  $('miner-strip').classList.toggle('active', !!info);
+  $('miner-title').textContent = info ? `${info.remine ? 'Re-minando' : 'Minando'} bloque #${info.index}` : 'Esperando transacciones…';
+  if (!info) { $('miner-nonce').textContent = '-'; $('miner-hash').replaceChildren(); }
 }
 
 function renderChain(s) {
@@ -94,8 +116,97 @@ function renderMempool(s) {
   if (txs.length > MAX_MEMPOOL) ul.appendChild(el('li', 'more', `+${txs.length - MAX_MEMPOOL} más`));
 }
 
+function fullHash(h) {
+  const span = el('span', 'hash mono');
+  const zeros = (h.match(/^0*/) || [''])[0].length;
+  if (zeros) span.appendChild(el('span', 'zeros', h.slice(0, zeros)));
+  span.append(h.slice(zeros));
+  return span;
+}
+
+function panelWelcome(s, body) {
+  const qr = el('img', 'qr-big');
+  qr.src = '/qr.svg';
+  qr.alt = 'QR para unirse';
+  const side = el('div', 'welcome-side');
+  side.appendChild(el('div', 'welcome-title', 'Escanea para unirte'));
+  side.appendChild(el('div', 'welcome-url mono', publicUrl.replace(/^https?:\/\//, '')));
+  const count = el('div', 'welcome-count');
+  count.appendChild(el('b', null, String(s.participants ?? 0)));
+  count.append((s.participants ?? 0) === 1 ? ' participante' : ' participantes');
+  side.appendChild(count);
+  body.append(qr, side);
+}
+
+function panelNetwork(s, body) {
+  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+  const name = (addr) => nick.get(addr) || (addr ? addr.slice(0, 8) + '…' : '?');
+  const last = (s.chain || [])[(s.chain || []).length - 1];
+
+  const detail = el('div', 'net-col');
+  detail.appendChild(el('h3', null, last ? (last.index === 0 ? 'Último bloque: Génesis' : `Último bloque: #${last.index}`) : 'Sin bloques'));
+  if (last) {
+    const kv = (k, v) => {
+      const r = el('div', 'kv');
+      r.appendChild(el('span', 'k', k));
+      r.appendChild(typeof v === 'string' ? el('span', 'mono', v) : v);
+      detail.appendChild(r);
+    };
+    kv('hash', fullHash(last.hash || ''));
+    kv('prevHash', last.index === 0 ? '—' : fullHash(last.prevHash || ''));
+    kv('nonce', String(last.nonce));
+    kv('dificultad', String(last.difficulty));
+    kv('hora', new Date(last.timestamp).toLocaleTimeString('es'));
+    const status = new Map((s.lastBlockStatus || []).map((x) => [x.hash, x]));
+    const ul = el('ul', 'net-txs');
+    (last.txs || []).slice(0, 5).forEach((t) => {
+      const st = status.get(t.hash);
+      const failed = st && st.status === 'failed';
+      const li = el('li', failed ? 'failed' : '');
+      li.append(`${failed ? '✖' : '✔'} ${name(t.from)} → ${name(t.to)} · ${t.amount}`);
+      if (failed && st.reason) li.appendChild(el('span', 'why', ' (' + st.reason + ')'));
+      ul.appendChild(li);
+    });
+    if ((last.txs || []).length > 5) ul.appendChild(el('li', 'more', `+${last.txs.length - 5} más`));
+    if (!(last.txs || []).length) ul.appendChild(el('li', 'more', 'Sin transacciones'));
+    detail.appendChild(ul);
+  }
+
+  const rank = el('div', 'net-col');
+  rank.appendChild(el('h3', null, 'Ranking de saldos'));
+  const top = (s.accounts || []).filter((a) => !a.system)
+    .sort((a, b) => Number(b.balance) - Number(a.balance)).slice(0, 10);
+  const ol = el('ol', 'ranking');
+  if (!top.length) ol.appendChild(el('li', 'more', 'Aún no hay participantes'));
+  top.forEach((a) => {
+    const li = el('li');
+    li.appendChild(el('span', 'rk-name', a.nick));
+    li.appendChild(el('span', 'rk-bal', String(a.balance)));
+    ol.appendChild(li);
+  });
+  rank.appendChild(ol);
+  body.append(detail, rank);
+}
+
+function renderPanel(s) {
+  const panel = PANEL_TITLES[s.panel] ? s.panel : 'qr';
+  $('main-panel').dataset.panel = panel;
+  $('main-panel-title').textContent = PANEL_TITLES[panel];
+  document.body.dataset.panel = panel; // small QR in the top bar hides while the big one shows
+  const body = $('main-panel-body');
+  body.replaceChildren();
+  if (panel === 'qr') panelWelcome(s, body);
+  else if (panel === 'red') panelNetwork(s, body);
+  else body.appendChild(el('div', 'placeholder', 'Disponible en la fase 3'));
+}
+
 function render(s) {
   state = s;
+  const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
+    s.accounts?.map((a) => a.nick + a.balance).join()].join('|') + publicUrl;
+  if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
+  $('tamper-banner').hidden = !s.tampered;
+  if (mining && !s.mining) setMining(null); // run aborted (tamper/restore/reset)
   mineIntervalMs = s.mineIntervalMs || mineIntervalMs;
   $('participants').textContent = String(s.participants ?? 0);
   $('height').textContent = String(s.height ?? 0);
@@ -123,6 +234,30 @@ socket.on('mempool:add', (tx) => {
 });
 socket.on('block:mined', (b) => {
   lastBlockAt = Date.now();
+  if (mining && mining.index === b.index) {
+    $('miner-nonce').textContent = String(b.nonce);
+    minerHash(b.hash, b.difficulty);
+    mining = null;
+    $('miner-title').textContent = `Bloque #${b.index} minado`;
+    const strip = $('miner-strip');
+    strip.classList.remove('active', 'flash');
+    void strip.offsetWidth; // restart the animation
+    strip.classList.add('flash');
+    setTimeout(() => { strip.classList.remove('flash'); if (!mining) setMining(null); }, 1500);
+  }
   freshBlocks.add(b.hash);
   setTimeout(() => freshBlocks.delete(b.hash), 2000);
+});
+
+socket.on('block:remined', () => setMining(null));
+
+socket.on('mine:start', (info) => {
+  setMining(info);
+  $('miner-nonce').textContent = '0';
+  $('miner-hash').replaceChildren();
+});
+socket.on('mine:progress', (p) => {
+  if (!mining || p.index !== mining.index) return;
+  $('miner-nonce').textContent = String(p.nonce);
+  minerHash(p.hash, mining.difficulty);
 });

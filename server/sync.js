@@ -1,15 +1,26 @@
 // Socket.io sync: per-role rooms, throttled full-state broadcast, per-wallet lite state.
 import { state, events, registerWallet, getBalance, availableBalance, expectedNonce, listNicks } from './state.js';
 import { submitTx } from './validator.js';
-import { validateChain, getDifficulty, getMineInterval } from './miner.js';
+import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining, isTampered } from './miner.js';
+import { registerAdminHandlers, getPanel } from './admin.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
 const BROADCAST_MS = 200;
 const CHAIN_WINDOW = 30;
 const HISTORY_LIMIT = 30;
+const PROGRESS_MS = 100;
 
 const num = (n) => (n === Infinity ? '∞' : n);
 const nickOf = (addr) => state.accounts.get(addr)?.nick ?? addr;
+
+// Status of each tx in the latest block, for the projector's network panel.
+function lastBlockStatus() {
+  const last = state.chain[state.chain.length - 1];
+  return (last?.txs ?? []).map((t) => {
+    const st = state.txStatus.get(t.hash) ?? { status: 'pending' };
+    return { hash: t.hash, status: st.status, reason: st.reason };
+  });
+}
 
 export function buildFullState() {
   const validity = validateChain(); // whole chain, then sliced to match the window
@@ -17,12 +28,17 @@ export function buildFullState() {
     chain: state.chain.slice(-CHAIN_WINDOW),
     validity: validity.slice(-CHAIN_WINDOW),
     mempool: state.mempool,
-    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, balance: num(getBalance(a.address)) })),
+    accounts: [...state.accounts.values()].map((a) => ({ address: a.address, nick: a.nick, system: !!a.system, balance: num(getBalance(a.address)) })),
     contracts: [],
     participants: 0, // overwritten by attachSync (needs socket info)
     height: state.chain.length - 1,
     difficulty: getDifficulty(),
     mineIntervalMs: getMineInterval(),
+    panel: getPanel(),
+    minerRunning: isMinerRunning(),
+    mining: isMining(),
+    tampered: isTampered(),
+    lastBlockStatus: lastBlockStatus(),
   };
 }
 
@@ -63,6 +79,11 @@ export function attachSync(io) {
   const notify = (addresses, event, payload) => {
     for (const addr of new Set(addresses)) socketsOf(addr).forEach((s) => s.emit(event, payload));
   };
+  const sendFull = (socket) => {
+    const full = buildFullState();
+    full.participants = new Set(walletOf.values()).size;
+    socket.emit('state:full', full);
+  };
   const sendState = (socket) => {
     const data = buildWalletState(walletOf.get(socket.id));
     if (data) socket.emit('state', data);
@@ -85,6 +106,9 @@ export function attachSync(io) {
     timer = setTimeout(() => { timer = null; broadcast(); }, BROADCAST_MS);
   };
 
+  let progressTimer = null;
+  let pendingProgress = null;
+
   const onEvent = {
     'state:changed': schedule,
     reset: () => {
@@ -94,7 +118,24 @@ export function attachSync(io) {
       schedule();
     },
     'mempool:add': (tx) => io.to('pantalla').to('admin').emit('mempool:add', tx),
-    'block:mined': (block) => io.to('pantalla').to('admin').emit('block:mined', block),
+    'block:mined': (block) => {
+      pendingProgress = null; // drop stale progress once the block is mined
+      io.to('pantalla').to('admin').emit('block:mined', block);
+    },
+    'block:remined': (block) => io.to('pantalla').to('admin').emit('block:remined', block),
+    'mine:start': (info) => {
+      pendingProgress = null;
+      io.to('pantalla').to('admin').emit('mine:start', info);
+    },
+    'mine:progress': (p) => {
+      pendingProgress = p; // always keep the latest value
+      if (progressTimer) return;
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        if (pendingProgress) io.to('pantalla').to('admin').emit('mine:progress', pendingProgress);
+        pendingProgress = null;
+      }, PROGRESS_MS);
+    },
     'tx:confirmed': (tx, block) => notify([tx.from, tx.to], 'tx:confirmed', { hash: tx.hash, block }),
     'tx:failed': (tx, block, reason) => notify([tx.from, tx.to], 'tx:failed', { hash: tx.hash, block, reason }),
   };
@@ -103,7 +144,8 @@ export function attachSync(io) {
   io.on('connection', (socket) => {
     const role = socket.handshake.query.role;
     if (!ROLES.includes(role)) { socket.disconnect(true); return; }
-    socket.join(role);
+    if (role !== 'admin') socket.join(role); // admin joins its room only after login
+    registerAdminHandlers(socket, { sendFull });
 
     socket.on('register', (payload, ack) => {
       const reply = typeof ack === 'function' ? ack : () => {};
@@ -134,17 +176,15 @@ export function attachSync(io) {
       if (walletOf.delete(socket.id)) schedule();
     });
 
-    if (role !== 'wallet') {
-      // Initial snapshot right away for late joiners; the throttled path covers the rest.
-      const full = buildFullState();
-      full.participants = new Set(walletOf.values()).size;
-      socket.emit('state:full', full);
-    }
+    // Initial snapshot right away for late joiners; the throttled path covers the rest.
+    if (role === 'pantalla') sendFull(socket);
   });
 
   return () => {
     for (const [name, fn] of Object.entries(onEvent)) events.off(name, fn);
     clearTimeout(timer);
+    clearTimeout(progressTimer);
     timer = null;
+    progressTimer = null;
   };
 }

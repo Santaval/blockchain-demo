@@ -4,10 +4,65 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin · Blockchain Demo</title>
+  <link rel="stylesheet" href="/admin/style.css">
 </head>
 <body>
-  <h1>Admin</h1>
-  <p id="status">Desconectado</p>
+  <header>
+    <h1>Admin</h1>
+    <span id="status" class="badge" data-connected="false">Desconectado</span>
+  </header>
+
+  <form id="login" class="card">
+    <label for="pw">Contraseña</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <button type="submit" class="primary">Entrar</button>
+  </form>
+
+  <main id="panel" hidden>
+    <section class="card">
+      <h2>Pantalla</h2>
+      <div id="panels" class="grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>Minería <span id="mining" class="mining" hidden>minando…</span></h2>
+      <p class="info">Altura <b id="height">0</b> · Mempool <b id="mempool">0</b></p>
+      <div class="grid">
+        <button id="toggle-miner" type="button"></button>
+        <button id="mine-now" type="button" class="primary">Minar ahora</button>
+      </div>
+      <label for="difficulty">Dificultad</label>
+      <select id="difficulty"></select>
+      <label for="interval">Intervalo entre bloques</label>
+      <select id="interval"></select>
+    </section>
+
+    <section class="card">
+      <h2>Manipular <span id="tampered" class="tampered" hidden>cadena manipulada</span></h2>
+      <p class="info">Sube la dificultad a 5 y re-mina para ver cuánto tarda.</p>
+      <label for="t-block">Bloque</label>
+      <select id="t-block"></select>
+      <label for="t-tx">Transacción</label>
+      <select id="t-tx"></select>
+      <label for="t-amount">Nuevo monto</label>
+      <input id="t-amount" type="number" min="1" step="1" inputmode="numeric">
+      <button id="tamper" type="button" class="danger">Manipular</button>
+      <div class="grid">
+        <button id="remine" type="button" class="primary">Re-minar bloque</button>
+        <button id="restore" type="button">Restaurar cadena</button>
+      </div>
+      <p class="info">Nonce: <b id="remine-nonce">-</b></p>
+      <ul id="validity" class="validity"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Otros</h2>
+      <button id="gift" type="button">Regalar +50 a todos</button>
+      <button id="reset" type="button" class="danger">Reset total</button>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="/admin/app.js"></script>
 </body>

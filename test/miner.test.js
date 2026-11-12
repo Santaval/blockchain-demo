@@ -1,10 +1,11 @@
+import './helpers/no-mine-pause.js';
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as wc from '../public/shared/wallet-crypto.js';
 import { MAX_TXS_PER_BLOCK } from '../server/config.js';
 import { state, events, SYSTEM, reset, registerWallet, getBalance, createSystemTx } from '../server/state.js';
 import { submitTx } from '../server/validator.js';
-import { mineBlock, validateChain, setDifficulty, getDifficulty, setMineInterval, getMineInterval, startMiner, stopMiner } from '../server/miner.js';
+import { mineBlock, mineBlockAnimated, isMining, mineNow, validateChain, setDifficulty, getDifficulty, setMineInterval, getMineInterval, startMiner, stopMiner } from '../server/miner.js';
 
 setDifficulty(2);
 
@@ -136,4 +137,74 @@ test('mine interval setter restarts a running timer', () => {
   assert.equal(getMineInterval(), 50);
   stopMiner();
   setMineInterval(old);
+});
+
+// --- animated mining ---
+const animated = () => {
+  const seen = { start: [], progress: [] };
+  const onStart = (e) => seen.start.push(e);
+  const onProgress = (e) => seen.progress.push(e);
+  events.on('mine:start', onStart);
+  events.on('mine:progress', onProgress);
+  return { seen, off: () => { events.off('mine:start', onStart); events.off('mine:progress', onProgress); } };
+};
+
+test('mineBlockAnimated mines a valid block and emits start/progress', async () => {
+  setDifficulty(5); // ~1M hashes expected, so many batches (progress is practically certain)
+  try {
+    await makeWallet('Alice');
+    const { seen, off } = animated();
+    const block = await mineBlockAnimated();
+    off();
+    assert.equal(block.index, 1);
+    assert.ok(validateChain().every((v) => v.valid));
+    assert.equal(state.mempool.length, 0);
+    assert.deepEqual(seen.start, [{ index: 1, difficulty: 5, txCount: 1 }]);
+    assert.ok(seen.progress.length > 0);
+    assert.ok(seen.progress.every((p) => p.index === 1 && typeof p.nonce === 'number' && p.hash.length === 64));
+    assert.equal(isMining(), false);
+  } finally { setDifficulty(2); }
+});
+
+test('concurrent animated runs mine only once', async () => {
+  setDifficulty(3);
+  try {
+    await makeWallet('Alice');
+    const [a, b, c] = await Promise.all([mineBlockAnimated(), mineBlockAnimated(), mineNow()]);
+    assert.ok(a);
+    assert.equal(b, null);
+    assert.equal(c, null);
+    assert.equal(state.chain.length, 2);
+  } finally { setDifficulty(2); }
+});
+
+test('tx submitted during mining stays in the mempool with a correct nonce', async () => {
+  setDifficulty(5); // long enough that the run is still going when the tx arrives
+  try {
+    const a = await makeWallet('Alice');
+    const b = await makeWallet('Bob');
+    mineBlock(); // confirm faucet txs
+    assert.equal((await submitTx(await makeTx(a, { to: b.address, nonce: 0 }))).ok, true);
+    const mining = mineBlockAnimated();
+    assert.equal(isMining(), true);
+    const second = await makeTx(a, { to: b.address, amount: 5, nonce: 1 });
+    assert.equal((await submitTx(second)).ok, true);
+    const block = await mining;
+    assert.equal(block.txs.length, 1);
+    assert.deepEqual(state.mempool.map((t) => t.hash), [second.hash]);
+    assert.equal(state.nonces.get(a.address), 1);
+    assert.equal(state.txStatus.get(second.hash).status, 'pending');
+  } finally { setDifficulty(2); }
+});
+
+test('reset during animated mining aborts quietly', async () => {
+  setDifficulty(5);
+  try {
+    await makeWallet('Alice');
+    const run = mineBlockAnimated();
+    reset();
+    assert.equal(await run, null);
+    assert.equal(state.chain.length, 1);
+    assert.equal(isMining(), false);
+  } finally { setDifficulty(2); }
 });
