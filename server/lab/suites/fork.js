@@ -20,6 +20,7 @@ export default {
     const people = [...state.accounts.values()].filter((a) => !a.system).length;
     const bankAtFork = getBalance(BANK);
     ctx.progress('paso 1/4');
+    ctx.viz({ height: realBlocks, accounts: people, bankAtFork, forkBank: bankAtFork, attacked: false });
     await ctx.check('Fork creado', true,
       `altura ${realBlocks} · ${people} cuentas · banco con ${bankAtFork} · dificultad ${getDifficulty()}`);
 
@@ -43,6 +44,7 @@ export default {
       await ctx.check('Banco con fondos', true, `se usa el saldo copiado: ${getBalance(BANK)}`);
     }
 
+    ctx.viz({ forkBank: getBalance(BANK) });
     ctx.progress('paso 4/4');
     setAttackEnabled(true);
     const bankBefore = getBalance(BANK);
@@ -53,6 +55,7 @@ export default {
     const loot = getBalance(SYSTEM.HACKER) - hackerBefore + ATTACK_AMOUNT; // what came back to the hacker
     const drained = bankBefore - bankAfter;
     const rounds = getContract(ATTACKER).storage.rounds;
+    ctx.viz({ attacked: true, bankBefore, forkBank: bankAfter, drained, rounds, loot: Math.max(0, loot), stake: ATTACK_AMOUNT });
     await ctx.check('Ataque de reentrada en el fork', launched.ok && drained > 0,
       `el banco pasó de ${bankBefore} a ${bankAfter} · ${rounds} reentradas · el Hacker sacó ${Math.max(0, loot)} con ${ATTACK_AMOUNT}`);
 

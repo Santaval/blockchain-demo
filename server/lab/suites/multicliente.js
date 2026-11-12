@@ -30,7 +30,10 @@ export default {
       if (a[i].valid === b[i].valid && a[i].reason === b[i].reason) agree++;
       else mismatch ??= `#${i} A: ${a[i].reason ?? 'válido'} · B: ${b[i].reason ?? 'válido'}`;
       ctx.progress(`bloque ${i + 1}/${total}`);
-      if (i % step === 0) await ctx.pace(40);
+      if (i % step === 0 || i === total - 1) {
+        ctx.viz({ total, checked: i + 1, agree, badFrom: firstBad(a.slice(0, i + 1))?.index ?? null });
+        await ctx.pace(40);
+      }
     }
     const bad = firstBad(a);
     await ctx.check(
@@ -49,6 +52,7 @@ export default {
       ['prevHash roto y re-minado', (c) => { c[tip].prevHash = 'ab'.repeat(32); remineBlock(c[tip]); }, 'prevHash no coincide con el bloque anterior'],
       ['Prueba de trabajo insuficiente', (c) => { c[tip].difficulty = leadingZeros(c[tip].hash) + 1; }, 'No cumple la dificultad'],
     ];
+    const muts = [];
     for (const [name, mutate, reason] of mutations) {
       ctx.progress(`caso ${mutations.findIndex((m) => m[0] === name) + 1}/${mutations.length}`);
       const copy = structuredClone(state.chain);
@@ -59,6 +63,8 @@ export default {
       const ta = va[tip];
       const tb = vb[tip];
       const ok = same(va, vb) && !ta.valid && ta.reason === reason;
+      muts.push({ name, a: ta.reason ?? 'válido', b: tb.reason ?? 'válido', block: tip, ok });
+      ctx.viz({ muts: [...muts] });
       await ctx.check(name, ok, ok
         ? `ambos rechazan el bloque #${tip}: ${reason}`
         : `A: #${tip} ${ta.reason ?? 'válido'} · B: #${tip} ${tb.reason ?? 'válido'}`);

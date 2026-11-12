@@ -14,6 +14,13 @@ Demo en vivo de 15 minutos: cada participante crea una wallet desde el celular y
 | `/pantalla` | Proyector |
 | `/admin` | Control de la demo (protegido con `ADMIN_PASSWORD`) |
 
+### El proyector es interactivo
+
+- **Toca un nodo** del lienzo (Participantes, Mempool, Minero, un bloque o un contrato) para abrir su detalle a la derecha. Con un bloque abierto, las flechas ← → recorren la cadena; Esc vuelve a la vista que eligió el presentador.
+- **Bloques anteriores:** los botones junto al registro de contratos desplazan la fila de bloques.
+- **Panel Pruebas:** ocupa todo el escenario con una escena por técnica. Un clic en un paso (o las flechas) fija esa técnica; "Seguir en vivo" vuelve a la que está corriendo.
+- **Tema:** el botón de contraste alterna automático, claro y oscuro (también `?tema=claro|oscuro|auto`).
+
 ## Stack
 
 Node 20, Express, Socket.io, HTML + JS vanilla (sin build step), `qrcode` en el servidor. Despliegue con Dockerfile en Coolify, con HTTPS (obligatorio para Web Crypto).

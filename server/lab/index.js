@@ -15,7 +15,7 @@ const RUN_TIMEOUT_MS = 120000;
 
 const blankSuite = (meta) => ({
   id: meta.id, name: meta.name, slides: meta.slides, description: meta.description, expectFail: meta.expectFail,
-  status: 'pending', progress: '', cases: [], casesTotal: 0, casesFailed: 0, summary: '',
+  status: 'pending', progress: '', cases: [], casesTotal: 0, casesFailed: 0, summary: '', viz: null,
 });
 const freshLab = () => ({
   running: false, seed: null, startedAt: null, finishedAt: null, real: null,
@@ -138,6 +138,9 @@ function onMessage(runId, msg) {
       break;
     case 'summary':
       if (s) s.summary = msg.text;
+      break;
+    case 'viz':
+      if (s) s.viz = { ...s.viz, ...msg.data };
       break;
     case 'markers':
       run.markers.addresses.push(...msg.addresses);

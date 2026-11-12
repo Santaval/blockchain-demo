@@ -10,13 +10,14 @@
 </head>
 <body data-panel="qr">
   <header class="top">
-    <div class="brand"><span class="logo">◈</span> Blockchain Demo</div>
+    <div class="brand"><span class="logo" data-icon="logo"></span> Blockchain Demo</div>
     <div class="ctr"><span class="lbl">Participantes</span><b id="participants">0</b></div>
     <div class="ctr"><span class="lbl">Altura</span><b id="height">0</b></div>
     <div class="ctr"><span class="lbl">Dificultad</span><b id="difficulty">-</b></div>
     <div class="ctr"><span class="lbl">Próximo bloque</span><b id="countdown">-</b></div>
-    <span id="tamper-chip" class="chip c-bad tamper-chip" hidden>⚠ Cadena manipulada</span>
+    <span id="tamper-chip" class="chip c-bad tamper-chip" data-icon="alert" hidden> Cadena manipulada</span>
     <div class="spacer"></div>
+    <button type="button" class="btn icon" data-theme-toggle data-icon="contrast"></button>
     <span id="status" class="chip" data-connected="false">Desconectado</span>
     <div id="qr-slot" class="qr-slot">
       <img id="qr-small" src="/qr.svg" alt="QR para unirse">
@@ -27,13 +28,26 @@
   <main class="work">
     <section class="stage">
       <svg id="canvas" viewBox="0 0 1600 760" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Flujo de la cadena de bloques"></svg>
-      <div class="logcard">
-        <div class="lbl">Registro de contratos</div>
+      <div id="lab-stage" class="lab-stage" hidden></div>
+      <div id="logcard" class="logcard">
+        <div class="loghead">
+          <span class="lbl">Registro de contratos</span>
+          <div id="chain-nav" class="chain-nav" hidden>
+            <span id="chain-range" class="lbl"></span>
+            <button id="chain-older" type="button" class="btn icon" data-icon="chevron-left" title="Bloques anteriores" aria-label="Bloques anteriores"></button>
+            <button id="chain-newer" type="button" class="btn icon" data-icon="chevron-right" title="Bloques más recientes" aria-label="Bloques más recientes"></button>
+            <button id="chain-tip" type="button" class="btn" hidden>Ir al último</button>
+          </div>
+        </div>
         <ul id="contract-log" class="contract-log"></ul>
       </div>
     </section>
     <aside class="inspector">
-      <div class="ihead"><div class="ic" id="panel-ic">◈</div><div class="ttl" id="main-panel-title"></div></div>
+      <div class="ihead">
+        <button id="panel-back" type="button" class="btn icon" data-icon="back" title="Volver a la vista del presentador (Esc)" aria-label="Volver" hidden></button>
+        <div class="ic" id="panel-ic"></div><div class="ttl" id="main-panel-title"></div>
+        <span id="panel-hint" class="lbl hint">Toca un nodo para inspeccionarlo</span>
+      </div>
       <div id="main-panel-body" class="ibody" data-panel="qr"></div>
     </aside>
   </main>

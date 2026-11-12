@@ -44,6 +44,8 @@ const INVARIANTS = [
   }],
 ];
 
+const bankOwed = () => Object.values(getContract(BANK).storage.deposits).reduce((n, v) => n + v, 0);
+
 const circulating = () => {
   let total = 0;
   for (const [addr, bal] of state.balances) if (addr !== SYSTEM.SISTEMA) total += bal;
@@ -87,6 +89,8 @@ export default {
     const base = [['depositar', 5], ['retirar', 2], ['votar', 2], ['ofertar', 3], ['transfer', 3]];
     const withAttack = [...base, ['atacar', 1.2]];
 
+    const invNames = INVARIANTS.map(([name]) => name);
+    ctx.viz({ step: 0, steps, invariants: invNames, bank: getBalance(BANK), owed: 0, ops: [], broken: null });
     let violation = null;
     let done = 0;
     for (let step = 1; step <= steps && !violation; step++) {
@@ -127,7 +131,8 @@ export default {
         const problem = check(inv);
         if (problem) { violation = { name, problem, step }; break; }
       }
-      await ctx.pace(STEP_PACE_MS);
+      ctx.viz({ step, bank: getBalance(BANK), owed: bankOwed(), ops: history.slice(-7), broken: violation });
+      await ctx.pace(violation ? 0 : STEP_PACE_MS);
     }
 
     if (violation) {

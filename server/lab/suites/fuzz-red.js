@@ -31,6 +31,17 @@ function txSane(tx) {
     Number.isInteger(tx.amount) && tx.amount >= (tx.call ? 0 : 1) && tx.from !== tx.to;
 }
 
+// Short, printable description of a junk payload.
+function brief(v) {
+  if (v === null || v === undefined) return String(v);
+  if (typeof v === 'string') return v.length > 16 ? `texto de ${v.length} caracteres` : JSON.stringify(v);
+  if (typeof v !== 'object') return String(v);
+  let text;
+  try { text = JSON.stringify(v); } catch { text = '[objeto]'; }
+  if (Object.hasOwn(v, '__proto__')) text = '{"__proto__":{"polluted":true}}';
+  return text.length > 34 ? `${text.slice(0, 33)}…` : text;
+}
+
 const flipChar = (hex) => (hex[0] === 'a' ? 'b' : 'a') + hex.slice(1);
 
 export default {
@@ -85,22 +96,22 @@ export default {
       }));
       // Every mutation here breaks the signature or a rule, so ok:true on any of them is a bug.
       const mutations = [
-        (tx) => { tx.signature = flipChar(tx.signature); },
-        (tx) => { tx.hash = flipChar(tx.hash); },
-        (tx) => { tx.amount = -5; },
-        (tx) => { tx.amount = 0; },
-        (tx) => { tx.amount = 1.5; },
-        (tx) => { tx.amount = '5'; },
-        (tx) => { tx.amount = 1e308; },
-        (tx) => { tx.amount = null; },
-        (tx) => { tx.nonce += 1; },
-        (tx) => { tx.to = fuzzer.address; },
-        (tx) => { tx.to = '0xNOEXISTE'; },
-        (tx) => { tx.from = SYSTEM.SISTEMA; },
-        (tx) => { delete tx.pubKey; },
-        (tx) => { tx.call = { method: 'depositar', args: [] }; },
-        (tx) => { tx.call = { method: 'x', args: ['y'.repeat(2000)] }; },
-        (tx) => { tx.timestamp = 'ayer'; },
+        ['firma alterada', (tx) => { tx.signature = flipChar(tx.signature); }],
+        ['hash alterado', (tx) => { tx.hash = flipChar(tx.hash); }],
+        ['monto -5', (tx) => { tx.amount = -5; }],
+        ['monto 0', (tx) => { tx.amount = 0; }],
+        ['monto 1.5', (tx) => { tx.amount = 1.5; }],
+        ['monto como texto', (tx) => { tx.amount = '5'; }],
+        ['monto 1e308', (tx) => { tx.amount = 1e308; }],
+        ['monto null', (tx) => { tx.amount = null; }],
+        ['nonce adelantado', (tx) => { tx.nonce += 1; }],
+        ['envío a sí mismo', (tx) => { tx.to = fuzzer.address; }],
+        ['destinatario inexistente', (tx) => { tx.to = '0xNOEXISTE'; }],
+        ['remitente 0xSISTEMA', (tx) => { tx.from = SYSTEM.SISTEMA; }],
+        ['sin llave pública', (tx) => { delete tx.pubKey; }],
+        ['llamada añadida tras firmar', (tx) => { tx.call = { method: 'depositar', args: [] }; }],
+        ['llamada con 2000 caracteres', (tx) => { tx.call = { method: 'x', args: ['y'.repeat(2000)] }; }],
+        ['fecha como texto', (tx) => { tx.timestamp = 'ayer'; }],
       ];
 
       const deep = (n) => (n === 0 ? 'fin' : { a: [deep(n - 1)] });
@@ -118,9 +129,18 @@ export default {
       let validSent = 0;
       let controlsOk = 0;
       let controlsTotal = 0;
+      let rejected = 0; // answered with a refusal
+      const recent = []; // last messages sent, for the projector
+      const note = (event, what) => {
+        recent.push({ event: event.length > 24 ? `${event.slice(0, 24)}…` : event, what });
+        if (recent.length > 7) recent.shift();
+      };
+      const draw = () => ctx.viz({
+        total: TOTAL, sent, rejected, accepted, crashes, adminTried, adminAccepted, controlsOk, controlsTotal, recent: [...recent],
+      });
 
       const ackFor = (event, mustReject) => (res) => {
-        if (res?.ok !== true) return;
+        if (res?.ok !== true) { rejected++; return; }
         if (event.startsWith('admin:')) { adminAccepted++; accepted++; } else if (mustReject) accepted++;
       };
 
@@ -128,16 +148,20 @@ export default {
         const roll = rng.next();
         if (roll < 0.25) { // tx:submit with a mutated (always invalid) transaction
           const tx = await signed();
-          rng.pick(mutations)(tx);
+          const [what, mutate] = rng.pick(mutations);
+          mutate(tx);
+          note('tx:submit', `transacción: ${what}`);
           walletA.emit('tx:submit', tx, ackFor('tx:submit', true));
         } else if (roll < 0.30 && validSent < 3) { // a few legitimate transactions must still work
           validSent++;
           walletA.emit('tx:submit', await signed(), () => {});
+          note('tx:submit', 'transacción: válida (debe pasar)');
         } else {
           const event = rng.pick(EVENTS);
           const socket = event.startsWith('admin:') ? rng.pick([adminAnon, walletA, walletB, screen]) : rng.pick([walletA, walletB, screen, adminAnon]);
           if (event.startsWith('admin:')) adminTried++;
           const payload = junk();
+          note(event, brief(payload));
           const useAck = event.startsWith('admin:') || rng.chance(0.5);
           const mustReject = event === 'register' || event === 'tx:submit' || event.startsWith('pool:submit');
           try {
@@ -147,7 +171,7 @@ export default {
         }
         sent++;
         ctx.progress(`mensaje ${i}/${TOTAL}`);
-        if (i % 10 === 0) { await sleep(3); await ctx.pace(60); }
+        if (i % 10 === 0) { await sleep(3); draw(); await ctx.pace(60); }
         if (i % CONTROL_EVERY === 0) {
           controlsTotal++;
           const res = await ask(walletA, 'pool:leave', {});
@@ -157,6 +181,7 @@ export default {
         }
       }
       await sleep(300);
+      draw();
 
       await ctx.check('Sin excepciones no capturadas', crashes === 0, `${crashes} caídas en ${sent} mensajes`);
       await ctx.check('Mensajes admin:* sin autenticar', adminAccepted === 0,

@@ -1,14 +1,20 @@
-// Inspector panels (welcome, network, voting, auction, bank). All DOM is built with createElement/textContent.
+// Inspector panels (welcome, network, voting, auction, bank, lab) and the local views opened by clicking a node
+// on the canvas (block, mempool, miner, participants). All DOM is built with createElement/textContent.
 import { el, hashEl } from './graph.js';
+import { icon } from '/shared/icons.js';
+import { renderLabInspector } from './lab.js';
 
 export const PANEL_META = {
-  qr: { title: 'Bienvenida', icon: '◈' },
-  red: { title: 'Red', icon: '▣' },
-  votacion: { title: 'Votación', icon: '✓' },
-  subasta: { title: 'Subasta', icon: '⚑' },
-  banco: { title: 'Banco', icon: '▤' },
-  pruebas: { title: 'Pruebas', icon: '🧪' },
+  qr: { title: 'Bienvenida', icon: 'logo' },
+  red: { title: 'Red', icon: 'block' },
+  votacion: { title: 'Votación', icon: 'vote' },
+  subasta: { title: 'Subasta', icon: 'tag' },
+  banco: { title: 'Banco', icon: 'bank' },
+  pruebas: { title: 'Pruebas', icon: 'flask' },
 };
+
+const mark = (ok) => icon(ok ? 'check' : 'x', ok ? 'm-ok' : 'm-bad');
+const shortAddr = (addr) => (addr ? addr.slice(0, 8) + '…' : '?');
 
 // app.js wires these in: getState() returns the latest state:full, onBankStep(logEntry|undefined) fires on each replay step.
 let getState = () => null;
@@ -61,7 +67,7 @@ function panelNetwork(s, body) {
       kv.appendChild(dd);
     };
     add('hash', fullHash(last.hash || ''));
-    add('prev', last.index === 0 ? '—' : fullHash(last.prevHash || ''));
+    add('prev', last.index === 0 ? 'ninguno' : fullHash(last.prevHash || ''));
     add('nonce', String(last.nonce));
     add('dificultad', String(last.difficulty));
     add('hora', new Date(last.timestamp).toLocaleTimeString('es'));
@@ -72,7 +78,7 @@ function panelNetwork(s, body) {
       const st = status.get(t.hash);
       const failed = st && st.status === 'failed';
       const li = el('li', failed ? 'failed' : '');
-      li.append(`${failed ? '✖' : '✔'} ${name(t.from)} → ${name(t.to)} · ${t.amount}`);
+      li.append(mark(!failed), ` ${name(t.from)} → ${name(t.to)} · ${t.amount}`);
       if (failed && st.reason) li.appendChild(el('span', 'why', ' (' + st.reason + ')'));
       ul.appendChild(li);
     });
@@ -81,7 +87,11 @@ function panelNetwork(s, body) {
     detail.appendChild(ul);
   }
 
-  // Miners first: during the mining part of the demo they matter most, and the balance ranking can be cut.
+  body.append(detail, rankingCol(s));
+}
+
+// Miners first: during the mining part of the demo they matter most, and the balance ranking can be cut.
+function rankingCol(s) {
   const rank = el('div', 'net-col');
   const miners = (s.miners || []).slice(0, 5);
   if (miners.length) {
@@ -89,7 +99,9 @@ function panelNetwork(s, body) {
     const ml = el('ol', 'ranking miners');
     miners.forEach((m) => {
       const li = el('li');
-      li.appendChild(el('span', 'rk-name', (m.mining ? '⛏ ' : '') + m.nick));
+      const nm = el('span', 'rk-name', m.nick);
+      if (m.mining) nm.prepend(icon('pick'), ' ');
+      li.appendChild(nm);
       li.appendChild(el('span', 'rk-bal', `${m.won} ${m.won === 1 ? 'bloque' : 'bloques'}`));
       ml.appendChild(li);
     });
@@ -107,7 +119,7 @@ function panelNetwork(s, body) {
     ol.appendChild(li);
   });
   rank.appendChild(ol);
-  body.append(detail, rank);
+  return rank;
 }
 
 // Contract panels plug in here: PANEL_RENDERERS[panelName] = (state, body) => {...}.
@@ -265,91 +277,147 @@ export function renderPanelBody(panel, s, body) {
   else body.appendChild(el('div', 'placeholder', 'Disponible en la fase 3'));
 }
 
-// ---------- Pruebas (testing lab) ----------
+PANEL_RENDERERS.pruebas = renderLabInspector;
 
-const fmtElapsed = (ms) => { const t = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
-const labElapsed = (lab) => (lab.startedAt ? (lab.finishedAt || Date.now()) - lab.startedAt : 0);
+// ---------- local views: what the presenter opens by clicking a node on the canvas ----------
 
-export function tickLab() {
-  const e = document.querySelector('.lab-elapsed[data-started-at]');
-  if (e) e.textContent = fmtElapsed(Date.now() - Number(e.dataset.startedAt));
+function kvList(rows) {
+  const kv = el('dl', 'kv');
+  for (const [k, v] of rows) {
+    kv.appendChild(el('dt', null, k));
+    const dd = el('dd');
+    if (typeof v === 'string') dd.appendChild(el('span', 'mono', v)); else dd.append(v);
+    kv.appendChild(dd);
+  }
+  return kv;
 }
 
-PANEL_RENDERERS.pruebas = (s, body) => {
-  const lab = s.lab;
-  if (!lab) return void body.appendChild(el('div', 'placeholder', 'Sin laboratorio'));
-  const suites = lab.suites || [];
-  const started = !!lab.startedAt;
-  const main = el('div', 'lab');
+function txLine(t, name, st) {
+  const failed = st?.status === 'failed';
+  const li = el('li', failed ? 'failed' : '');
+  const what = t.call ? `${name(t.from)} llama ${t.call.method}() en ${name(t.to)}` : `${name(t.from)} → ${name(t.to)}`;
+  li.append(st ? mark(!failed) : icon('circle'), ` ${what} · ${t.amount}`);
+  if (t.coinbase) li.appendChild(el('span', 'chip c-violet', 'recompensa'));
+  if (failed && st.reason) li.appendChild(el('span', 'why', ` (${st.reason})`));
+  return li;
+}
 
-  const head = el('div', 'lab-head');
-  head.appendChild(el('div', 'lab-title', 'Laboratorio · fork de la red en vivo'));
-  const chips = el('div', 'lab-chips');
-  if (lab.running) chips.appendChild(el('span', 'chip c-running', 'corriendo'));
-  else if (started) chips.appendChild(el('span', 'chip c-info', 'terminado'));
-  if (lab.seed != null && started) chips.appendChild(el('span', 'chip c-neutral', `Semilla ${lab.seed}`));
-  if (started) {
-    const t = el('span', 'chip c-neutral lab-elapsed', fmtElapsed(labElapsed(lab)));
-    if (lab.running) t.dataset.startedAt = String(lab.startedAt);
-    chips.appendChild(t);
+function viewBlock(s, body, index) {
+  const chain = s.chain || [];
+  const at = chain.findIndex((b) => b.index === index);
+  const b = chain[at];
+  if (!b) return void body.appendChild(el('div', 'placeholder', `El bloque #${index} ya no está en la ventana`));
+  const nick = nickMap(s);
+  const name = (addr) => nick.get(addr) || shortAddr(addr);
+  const v = (s.validity || [])[at];
+  const valid = !v || v.valid !== false;
+  const col = el('div', 'net-col');
+  const head = el('div', 'loc-head');
+  head.append(el('b', null, b.index === 0 ? 'Bloque Génesis' : `Bloque #${b.index}`),
+    Object.assign(el('span', `chip ${valid ? 'c-ok' : 'c-bad'}`), { textContent: valid ? 'válido' : v.reason || 'inválido' }));
+  col.appendChild(head);
+  col.appendChild(kvList([
+    ['hash', fullHash(b.hash || '')],
+    ['prev', b.index === 0 ? 'ninguno: es el primero' : fullHash(b.prevHash || '')],
+    ['nonce', String(b.nonce)],
+    ['dificultad', `${b.difficulty} ${b.difficulty === 1 ? 'cero' : 'ceros'} al inicio del hash`],
+    ['hora', new Date(b.timestamp).toLocaleTimeString('es')],
+    ['minero', b.miner ? name(b.miner) : 'servidor'],
+  ]));
+  const prev = chain[at - 1];
+  if (b.index > 0) {
+    const linked = !prev || prev.hash === b.prevHash;
+    const note = el('div', `loc-note ${linked ? 'ok' : 'bad'}`);
+    note.append(mark(linked), linked
+      ? ` «prev» es el hash del bloque #${b.index - 1}: si ese bloque cambia, este deja de encajar.`
+      : ` «prev» ya no coincide con el hash del bloque #${b.index - 1}: la cadena se rompió aquí.`);
+    col.appendChild(note);
   }
-  head.appendChild(chips);
-  main.appendChild(head);
+  const txs = el('div', 'net-col');
+  txs.appendChild(el('h3', null, `Transacciones (${(b.txs || []).length})`));
+  const status = at === chain.length - 1 ? new Map((s.lastBlockStatus || []).map((x) => [x.hash, x])) : null;
+  const ul = el('ul', 'net-txs');
+  (b.txs || []).slice(0, 7).forEach((t) => ul.appendChild(txLine(t, name, status ? status.get(t.hash) : { status: 'confirmed' })));
+  if ((b.txs || []).length > 7) ul.appendChild(el('li', 'more', `+${b.txs.length - 7} más`));
+  if (!(b.txs || []).length) ul.appendChild(el('li', 'more', 'Sin transacciones'));
+  txs.appendChild(ul);
+  body.append(col, txs, el('div', 'loc-keys', 'Flechas ← → para recorrer la cadena · Esc para volver'));
+}
 
-  const list = el('ul', 'lab-suites');
-  for (const su of suites) {
-    const bug = su.expectFail && su.status === 'fail';
-    const li = el('li', `lab-suite st-${su.status}${bug ? ' bug' : ''}`);
-    const icon = { pending: '○', running: '●', pass: '✔', fail: '✖' }[su.status] || '○';
-    li.appendChild(el('span', 'lab-ic', icon));
-    const nm = el('span', 'lab-name', su.name);
-    li.appendChild(nm);
-    li.appendChild(el('span', 'lab-slide', `diap. ${su.slides}`));
-    if (bug) li.appendChild(el('span', 'chip c-ok lab-bug', '¡bug encontrado!'));
-    const right = su.status === 'running' ? su.progress : su.status === 'pending' ? '' : su.summary;
-    li.appendChild(el('span', 'lab-right', right || ''));
-    list.appendChild(li);
-  }
-  main.appendChild(list);
+function viewMempool(s, body) {
+  const nick = nickMap(s);
+  const name = (addr) => nick.get(addr) || shortAddr(addr);
+  const pending = s.mempool || [];
+  const col = el('div', 'net-col');
+  col.appendChild(el('div', 'loc-lead', 'Sala de espera: transacciones firmadas y válidas que todavía no están en ningún bloque.'));
+  col.appendChild(el('h3', null, `En espera (${pending.length})`));
+  const ul = el('ul', 'net-txs pending');
+  pending.slice(0, 10).forEach((t) => ul.appendChild(txLine(t, name, null)));
+  if (pending.length > 10) ul.appendChild(el('li', 'more', `+${pending.length - 10} más`));
+  if (!pending.length) ul.appendChild(el('li', 'more', 'Vacío: el minero no tiene nada que incluir'));
+  col.appendChild(ul);
+  col.appendChild(el('div', 'loc-note', 'El minero las toma, las mete en un bloque y busca el nonce. Hasta entonces no cambian ningún saldo.'));
+  body.appendChild(col);
+}
 
-  if (!started) {
-    main.appendChild(el('div', 'lab-empty', 'Corre las pruebas desde el admin'));
-    const desc = el('ul', 'lab-desc');
-    for (const su of suites) desc.appendChild(el('li', null, `${su.name}: ${su.description}`));
-    main.appendChild(desc);
-    return void body.appendChild(main);
-  }
+// The miner view is repainted in place by paintPow() on every mine:progress, so it is not rebuilt.
+let powModel = { nonce: '-', hash: '', hit: false };
+export function paintPow(m) {
+  if (m) powModel = m;
+  const n = document.getElementById('pow-nonce');
+  if (!n) return;
+  n.textContent = String(powModel.nonce);
+  const hEl = document.getElementById('pow-hash');
+  hEl.replaceChildren(powModel.hash ? fullHash(powModel.hash) : 'esperando el próximo bloque');
+  hEl.classList.toggle('hit', !!powModel.hit);
+}
 
-  const failed = suites.find((x) => x.id === 'invariantes' && x.status === 'fail');
-  const bad = failed && (failed.cases || []).filter((c) => !c.ok).pop();
-  const focus = suites.find((x) => x.status === 'running')
-    || [...suites].reverse().find((x) => x.status === 'pass' || x.status === 'fail');
-  if (focus && !bad) {
-    const ul = el('ul', 'lab-cases');
-    for (const c of (focus.cases || []).slice(-5)) {
-      const li = el('li', c.ok ? 'ok' : 'bad');
-      li.appendChild(el('b', null, `${c.ok ? '✔' : '✖'} ${c.name}`));
-      const one = String(c.detail || '').split('\n')[0];
-      if (one) li.append(` — ${one}`);
-      ul.appendChild(li);
-    }
-    main.appendChild(ul);
+function viewMiner(s, body) {
+  const d = s.difficulty ?? 0;
+  const tip = (s.chain || [])[(s.chain || []).length - 1];
+  const col = el('div', 'net-col');
+  col.appendChild(el('div', 'loc-lead', 'Prueba de trabajo: probar números (nonce) hasta que el hash del bloque empiece con suficientes ceros.'));
+  const formula = el('div', 'pow-formula mono');
+  formula.append('SHA-256( ', el('span', 'f', `#${(tip?.index ?? 0) + 1}`), ' | ', el('span', 'f', 'hash anterior'), ' | ',
+    el('span', 'f', 'hora'), ' | ', el('span', 'f', 'transacciones'), ' | ', el('span', 'f nonce', 'nonce'), ' )');
+  col.appendChild(formula);
+  const nonce = el('b', 'mono');
+  nonce.id = 'pow-nonce';
+  const hash = el('div', 'pow-hash mono');
+  hash.id = 'pow-hash';
+  col.appendChild(kvList([['nonce', nonce], ['hash', hash], ['meta', `empezar con ${'0'.repeat(d)}`]]));
+  const tries = 16 ** d;
+  col.appendChild(el('div', 'loc-note', `Con dificultad ${d} acierta 1 de cada ${tries.toLocaleString('es')} intentos. Cada cero extra multiplica el trabajo por 16.`));
+  const ladder = el('div', 'pow-ladder');
+  for (const k of [3, 4, 5, 6]) {
+    const row = el('div', k === d ? 'on' : '');
+    row.append(el('span', 'mono', '0'.repeat(k)), el('b', null, `${(16 ** k).toLocaleString('es')} intentos`));
+    ladder.appendChild(row);
   }
-  if (bad) {
-    const box = el('div', 'lab-fail');
-    box.appendChild(el('div', 'lab-fail-title', bad.name.startsWith('Invariante violada') ? bad.name : `Invariante violada · ${bad.name}`));
-    box.appendChild(el('pre', 'mono lab-fail-detail', String(bad.detail || '')));
-    main.appendChild(box);
-  }
+  col.appendChild(ladder);
+  body.append(col);
+  if ((s.miners || []).length) body.append(rankingCol(s));
+  paintPow();
+}
 
-  if (lab.real) {
-    const r = lab.real;
-    const bank = r.after?.bank ?? r.before?.bank;
-    const ok = r.intact === true;
-    const foot = el('div', `lab-foot ${ok ? 'ok' : r.intact === false ? 'bad' : ''}`);
-    foot.textContent = ok ? `Red real intacta ✔ · el banco real sigue en ${bank}`
-      : r.intact === false ? `✖ La red real cambió${r.note ? ' · ' + r.note : ''}` : (r.note || '');
-    if (foot.textContent) main.appendChild(foot);
-  }
-  body.appendChild(main);
+function viewWallets(s, body) {
+  const col = el('div', 'net-col');
+  col.appendChild(el('div', 'loc-lead', 'Cada teléfono genera su par de llaves. La privada firma las transacciones; con la pública cualquiera verifica la firma.'));
+  body.append(col, rankingCol(s));
+}
+
+export const LOCAL_META = {
+  block: { title: 'Bloque', icon: 'block' },
+  mempool: { title: 'Mempool', icon: 'layers' },
+  miner: { title: 'Minero', icon: 'pick' },
+  wallets: { title: 'Participantes', icon: 'users' },
 };
+
+/** local: { kind: 'block', index } | { kind: 'mempool' | 'miner' | 'wallets' } */
+export function renderLocalBody(local, s, body) {
+  body.replaceChildren();
+  if (local.kind === 'block') viewBlock(s, body, local.index);
+  else if (local.kind === 'mempool') viewMempool(s, body);
+  else if (local.kind === 'miner') viewMiner(s, body);
+  else viewWallets(s, body);
+}

@@ -10,15 +10,16 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><span class="logo">◈</span> Mi wallet</div>
+    <div class="brand"><span class="logo" data-icon="wallet"></span> Mi wallet</div>
     <span id="top-balance" class="chip c-ok" hidden></span>
     <span id="status" class="chip" data-connected="false">Desconectado</span>
+    <button type="button" class="btn icon" data-theme-toggle data-icon="contrast"></button>
   </header>
   <main>
     <p id="fatal" class="error" hidden></p>
 
     <section id="onboarding" class="card" hidden>
-      <div class="node small k-trigger"><div class="ic">◈</div><div class="tx"><div class="ttl">Crea tu wallet</div><div class="sub">Se genera en tu teléfono</div></div></div>
+      <div class="node small k-trigger"><div class="ic" data-icon="wallet"></div><div class="tx"><div class="ttl">Crea tu wallet</div><div class="sub">Se genera en tu teléfono</div></div></div>
       <form id="onboard-form" class="body" autocomplete="off">
         <label for="nick">Tu apodo</label>
         <input id="nick" maxlength="20" required placeholder="Ej: Ana">
@@ -30,7 +31,7 @@
     <div id="main" hidden>
       <div class="view" data-view="inicio">
       <section class="card">
-        <div class="node small k-out"><div class="ic">◈</div><div class="tx"><div class="ttl">Hola, <span id="nick-label"></span></div><div class="sub">Tu saldo en la cadena</div></div></div>
+        <div class="node small k-out"><div class="ic" data-icon="wallet"></div><div class="tx"><div class="ttl">Hola, <span id="nick-label"></span></div><div class="sub">Tu saldo en la cadena</div></div></div>
         <div class="body">
           <p class="balance"><span id="balance">0</span> <small>monedas</small></p>
           <p id="available-row" hidden><span class="chip c-warn">Disponible: <b id="available"></b></span></p>
@@ -40,7 +41,7 @@
       </section>
 
       <section class="card">
-        <div class="node small k-neutral"><div class="ic">⚿</div><div class="tx"><div class="ttl">Mis llaves</div><div class="sub">Pública y privada</div></div></div>
+        <div class="node small k-neutral"><div class="ic" data-icon="key"></div><div class="tx"><div class="ttl">Mis llaves</div><div class="sub">Pública y privada</div></div></div>
         <div class="body">
           <button id="keys-toggle" type="button" class="btn">Ver mis llaves</button>
           <div id="keys" class="body" hidden>
@@ -56,7 +57,7 @@
 
       <div class="view" data-view="enviar" hidden>
       <section class="card">
-        <div class="node small k-trigger"><div class="ic">➤</div><div class="tx"><div class="ttl">Enviar</div><div class="sub">Monedas a un compañero</div></div></div>
+        <div class="node small k-trigger"><div class="ic" data-icon="send"></div><div class="tx"><div class="ttl">Enviar</div><div class="sub">Monedas a un compañero</div></div></div>
         <form id="send-form" class="body" autocomplete="off">
           <label for="to">Para</label>
           <select id="to" required></select>
@@ -71,7 +72,7 @@
 
       <div class="view" data-view="minar" hidden>
       <section class="card">
-        <div class="node small k-ai"><div class="ic">⛏</div><div class="tx"><div class="ttl">Minar</div><div class="sub">Compite por el próximo bloque</div></div></div>
+        <div class="node small k-ai"><div class="ic" data-icon="pick"></div><div class="tx"><div class="ttl">Minar</div><div class="sub">Compite por el próximo bloque</div></div></div>
         <div class="body">
           <p id="mine-warn" class="warn-card c-warn" hidden></p>
           <p id="mine-win" class="win-card" hidden></p>
@@ -90,15 +91,16 @@
       <div class="view" data-view="contratos" hidden>
         <section id="contracts"></section>
         <section id="contracts-empty" class="card">
-          <div class="node small k-tool"><div class="ic">⚙</div><div class="tx"><div class="ttl">Contratos</div><div class="sub">Votación, subasta y banco</div></div></div>
+          <div class="node small k-tool"><div class="ic" data-icon="contract"></div><div class="tx"><div class="ttl">Contratos</div><div class="sub">Votación, subasta y banco</div></div></div>
           <p class="muted">No hay contratos activos todavía. Aparecerán aquí cuando el presentador los abra.</p>
         </section>
       </div>
 
       <div class="view" data-view="historial" hidden>
       <section class="card">
-        <div class="node small k-neutral"><div class="ic">☰</div><div class="tx"><div class="ttl">Historial</div><div class="sub">Tus transacciones</div></div></div>
+        <div class="node small k-neutral"><div class="ic" data-icon="clock"></div><div class="tx"><div class="ttl">Historial</div><div class="sub">Tus transacciones</div></div></div>
         <div class="body">
+          <p class="muted small">Cada transacción pasa por tres pasos: la firmas, espera en el mempool y un minero la mete en un bloque.</p>
           <ul id="history" class="history"></ul>
           <p id="history-empty" class="muted">Aún no hay transacciones.</p>
         </div>
@@ -107,11 +109,11 @@
     </div>
   </main>
   <nav id="tabs" class="tabbar" hidden>
-    <button type="button" data-tab="inicio" class="on"><span class="ti">◈</span>Inicio</button>
-    <button type="button" data-tab="enviar"><span class="ti">➤</span>Enviar</button>
-    <button type="button" data-tab="minar"><span class="ti">⛏</span>Minar<span id="mine-dot" class="dot" hidden></span></button>
-    <button type="button" data-tab="contratos"><span class="ti">⚙</span>Contratos<span id="tab-dot" class="dot" hidden></span></button>
-    <button type="button" data-tab="historial"><span class="ti">☰</span>Historial</button>
+    <button type="button" data-tab="inicio" class="on"><span class="ti" data-icon="home"></span>Inicio</button>
+    <button type="button" data-tab="enviar"><span class="ti" data-icon="send"></span>Enviar</button>
+    <button type="button" data-tab="minar"><span class="ti" data-icon="pick"></span>Minar<span id="mine-dot" class="dot" hidden></span></button>
+    <button type="button" data-tab="contratos"><span class="ti" data-icon="contract"></span>Contratos<span id="tab-dot" class="dot" hidden></span></button>
+    <button type="button" data-tab="historial"><span class="ti" data-icon="clock"></span>Historial</button>
   </nav>
   <div id="toast" class="toast" hidden></div>
   <script src="/socket.io/socket.io.js"></script>

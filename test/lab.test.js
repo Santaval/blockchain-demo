@@ -51,6 +51,7 @@ test('spec: every vector gets its expected verdict', async () => {
   const wrong = res.cases.filter((c) => !c.ok);
   assert.deepEqual(wrong, []);
   assert.ok(res.cases.length >= 30);
+  assert.equal(res.viz.vectors.length, res.cases.length);
   assert.equal(res.status, 'pass');
 });
 
@@ -58,6 +59,10 @@ test('multicliente: client B agrees with A on a valid chain and on tampered ones
   const res = await run('multicliente');
   assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
   assert.match(res.cases[0].detail, /^\d+\/\d+ bloques coinciden/);
+  assert.equal(res.viz.checked, res.viz.total);
+  assert.equal(res.viz.agree, res.viz.total);
+  assert.equal(res.viz.badFrom, null);
+  assert.deepEqual(res.viz.muts.map((m) => m.ok), [true, true, true, true]);
 
   const chain = structuredClone(state.chain);
   assert.deepEqual(validateChainB(chain), validateChain(chain));
@@ -79,6 +84,10 @@ test('fuzz-red: no crashes and nothing accepted that should be rejected', async 
   const res = await run('fuzz-red', 3);
   assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
   assert.match(res.summary, /^300 mensajes · 0 caídas · 0 aceptados indebidamente$/);
+  assert.equal(res.viz.sent, 300);
+  assert.equal(res.viz.accepted, 0);
+  assert.ok(res.viz.rejected > 0);
+  assert.ok(res.viz.recent.length > 0 && res.viz.recent.every((m) => typeof m.what === 'string' && m.what.length < 60));
 });
 
 test('bft: the three expected outcomes', async () => {
@@ -88,12 +97,17 @@ test('bft: the three expected outcomes', async () => {
   assert.ok(names.includes('Caso 1 · Nadie lo finaliza'));
   assert.ok(names.includes('Caso 2 · Cambio de líder: gana el bloque honesto'));
   assert.ok(names.includes('Caso 3 · Vivacidad: sin acuerdo'));
+  assert.deepEqual(res.viz.scenes.map((s) => [s.votes, s.good]), [[1, true], [2, true], [3, true], [2, true]]);
+  assert.equal(res.viz.scenes[3].nodes.filter((n) => n.byz).length, 2);
 });
 
 test('fork: the attack drains the bank inside the copy', async () => {
   const res = await run('fork');
   assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
   assert.match(res.cases.at(-1).detail, /el banco pasó de \d+ a \d+/);
+  assert.equal(res.viz.attacked, true);
+  assert.equal(res.viz.bankBefore - res.viz.forkBank, res.viz.drained);
+  assert.ok(res.viz.drained > 0);
 });
 
 test('invariantes: finds the bank solvency violation, deterministically', async () => {
@@ -104,6 +118,10 @@ test('invariantes: finds the bank solvency violation, deterministically', async 
   assert.match(bad.name, /Banco solvente/);
   assert.match(bad.detail, /Últimos pasos/);
   assert.equal(res.cases.filter((c) => !c.ok).length, 1);
+  assert.equal(res.viz.broken.name, 'Banco solvente');
+  assert.equal(res.viz.step, res.viz.broken.step);
+  assert.ok(res.viz.bank < res.viz.owed);
+  assert.ok(res.viz.ops.length > 0 && res.viz.ops.length <= 7);
 
   freshNetwork();
   const again = await run('invariantes', 1);
@@ -114,6 +132,8 @@ test('invariantes: finds nothing when the attack is out of the step mix', async 
   const res = await run('invariantes', 1, { noAttack: true });
   assert.equal(res.status, 'pass', JSON.stringify(res.cases.filter((c) => !c.ok)));
   assert.match(res.summary, /^200 pasos sin violaciones/);
+  assert.equal(res.viz.broken, null);
+  assert.ok(res.viz.bank >= res.viz.owed);
 });
 
 test('runner reports progress, cases and errors', async () => {
@@ -148,6 +168,7 @@ test('runLab: fork leaves the real network untouched and a second run is refused
   assert.equal(lab.seed, 5);
   const fork = lab.suites.find((s) => s.id === 'fork');
   assert.equal(fork.status, 'pass', JSON.stringify(fork.cases));
+  assert.equal(fork.viz.attacked, true);
   const intact = fork.cases.find((c) => c.name === 'Red real intacta');
   assert.equal(intact.ok, true);
   assert.match(intact.detail, /el banco real sigue en 0/);
