@@ -5,6 +5,7 @@ import { validateChain, getDifficulty, getMineInterval, isMinerRunning, isMining
 import { contractsView, contractsViewFor, getLogs, getInternalTransfers } from './contracts/engine.js';
 import { registerAdminHandlers, getPanel } from './admin.js';
 import * as pool from './pool.js';
+import { getLabState } from './lab/index.js';
 import { POOL_REWARD, POOL_HASH_RATE } from './config.js';
 
 const ROLES = ['wallet', 'pantalla', 'admin'];
@@ -45,6 +46,7 @@ export function buildFullState() {
     lastBlockStatus: lastBlockStatus(),
     pool: pool.poolState(),
     miners: pool.leaderboard(),
+    lab: getLabState(),
   };
 }
 

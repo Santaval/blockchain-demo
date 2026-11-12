@@ -49,6 +49,23 @@ export function reset() {
   events.emit('reset');
 }
 
+// Full deep copy of the ledger (Maps and Infinity survive structured clone). Used to fork the node in the lab.
+export function exportSnapshot() {
+  const { chain, mempool, balances, nonces, accounts, nickIndex, txStatus } = state;
+  return structuredClone({ chain, mempool, balances, nonces, accounts, nickIndex, txStatus });
+}
+
+// Replaces the ledger with a copy of `snap`. Emits nothing (no 'reset'), so contract storage stays as it is.
+export function importSnapshot(snap) {
+  const copy = structuredClone(snap);
+  state.chain = copy.chain;
+  state.mempool = copy.mempool;
+  for (const key of ['balances', 'nonces', 'accounts', 'nickIndex', 'txStatus']) {
+    state[key].clear();
+    for (const [k, v] of copy[key]) state[key].set(k, v);
+  }
+}
+
 export const getBalance = (addr) => state.balances.get(addr) ?? 0;
 
 export const pendingOutgoing = (addr) =>

@@ -1,7 +1,7 @@
 import { connect, bindStatus } from '/shared/socket.js';
 
 const $ = (id) => document.getElementById(id);
-const PANELS = [['qr', 'QR'], ['red', 'Red'], ['votacion', 'Votación'], ['subasta', 'Subasta'], ['banco', 'Banco']];
+const PANELS = [['qr', 'QR'], ['red', 'Red'], ['votacion', 'Votación'], ['subasta', 'Subasta'], ['banco', 'Banco'], ['pruebas', 'Pruebas']];
 const DIFFICULTIES = [3, 4, 5, 6];
 const INTERVALS = [5, 8, 12, 20, 30];
 
@@ -208,8 +208,61 @@ function renderBank(s) {
   $('b-info').textContent = `Saldo del banco: ${bank.balance}` + (atk.lastLoot ? ` · último botín: ${atk.lastLoot} (${atk.rounds} reentradas)` : '');
 }
 
+// Pruebas: suite rows are rebuilt on each push (small list, text only).
+let lab = null;
+const STATUS_CHIP = { pending: ['pendiente', 'c-neutral'], running: ['corriendo', 'c-running'], pass: ['ok', 'c-ok'], fail: ['falló', 'c-bad'] };
+function labRun(suite, label) {
+  const raw = $('lab-seed-in').value.trim();
+  const payload = { suite };
+  if (raw !== '') payload.seed = Number(raw);
+  socket.emit('admin:lab-run', payload, (res) => {
+    if (res?.ok) toast(`${label} · semilla ${res.seed}`);
+    else toast(res?.reason || 'Error', false);
+  });
+}
+$('lab-all').addEventListener('click', () => labRun('all', 'Corriendo todas'));
+$('lab-clear').addEventListener('click', () => send('admin:lab-clear', {}, lab?.running ? 'Pruebas canceladas' : 'Pruebas limpiadas'));
+function renderLab(s) {
+  lab = s.lab;
+  if (!lab) return;
+  const running = !!lab.running;
+  $('lab-all').disabled = running;
+  $('lab-clear').textContent = running ? 'Cancelar' : 'Limpiar';
+  $('lab-seed').textContent = lab.seed != null ? String(lab.seed) : '-';
+  const st = $('lab-state');
+  st.hidden = !running && !lab.finishedAt;
+  st.className = running ? 'chip c-running' : 'chip c-neutral';
+  st.textContent = running ? 'corriendo…' : 'terminado';
+  const ul = $('lab-suites');
+  ul.replaceChildren();
+  for (const su of lab.suites || []) {
+    const li = document.createElement('li');
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    const b = document.createElement('b');
+    b.textContent = su.name;
+    const sm = document.createElement('small');
+    sm.textContent = `diap. ${su.slides}` + (su.status === 'running' && su.progress ? ` · ${su.progress}` : '');
+    nm.append(b, sm);
+    let [txt, cls] = STATUS_CHIP[su.status] || STATUS_CHIP.pending;
+    if (su.expectFail && su.status === 'fail') [txt, cls] = ['encontró el bug', 'c-ok'];
+    const chip = document.createElement('span');
+    chip.className = `chip ${cls}`;
+    chip.textContent = txt;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.textContent = 'Correr';
+    btn.disabled = running;
+    btn.addEventListener('click', () => labRun(su.id, su.name));
+    li.append(nm, chip, btn);
+    ul.appendChild(li);
+  }
+}
+
 function render(s) {
   if (!loggedIn) return;
+  renderLab(s);
   panelButtons.forEach((b) => b.classList.toggle('on', b.dataset.panel === s.panel));
   minerRunning = !!s.minerRunning;
   $('toggle-miner').textContent = minerRunning ? 'Pausar' : 'Reanudar';
