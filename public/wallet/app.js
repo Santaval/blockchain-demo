@@ -49,6 +49,7 @@ async function register() {
   if (res?.ok) {
     $('onboarding').hidden = true;
     $('main').hidden = false;
+    $('tabs').hidden = false;
     $('nick-label').textContent = res.nick ?? nick;
     $('address').textContent = res.address;
     $('pub').textContent = pubHex;
@@ -59,6 +60,8 @@ async function register() {
 
 function showOnboarding(msg) {
   $('main').hidden = true;
+  $('tabs').hidden = true;
+  $('top-balance').hidden = true;
   $('onboarding').hidden = false;
   showError($('onboard-error'), msg || '');
 }
@@ -177,6 +180,8 @@ function renderHistory() {
 function render() {
   if (!state) return;
   $('balance').textContent = state.balance;
+  $('top-balance').textContent = `${state.balance} monedas`;
+  $('top-balance').hidden = false;
   const diff = String(state.available) !== String(state.balance);
   $('available-row').hidden = !diff;
   $('available').textContent = state.available;
@@ -185,6 +190,25 @@ function render() {
   renderHistory();
   renderContracts();
 }
+
+// ---- Tabs: one section per screen, remembered for this browser tab ----
+const TABS = ['inicio', 'enviar', 'contratos', 'historial'];
+let currentTab = 'inicio';
+let knownContracts = 0;
+function showTab(name) {
+  if (!TABS.includes(name)) name = 'inicio';
+  currentTab = name;
+  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.dataset.view !== name; });
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  if (name === 'contratos') $('tab-dot').hidden = true;
+  try { sessionStorage.setItem('wallet.tab', name); } catch { /* ignore */ }
+  window.scrollTo(0, 0);
+}
+$('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) showTab(b.dataset.tab);
+});
+try { showTab(sessionStorage.getItem('wallet.tab') || 'inicio'); } catch { showTab('inicio'); }
 
 // ---- Contracts ----
 // Per-contract card renderers: CARD_RENDERERS[address] = (container, contract) => {...}. Unknown ones show the name only.
@@ -199,6 +223,10 @@ function renderContracts() {
   const root = $('contracts');
   root.replaceChildren();
   root.hidden = active.length === 0;
+  $('contracts-empty').hidden = active.length > 0;
+  // Flag new contracts on the tab when the user is elsewhere.
+  if (active.length > knownContracts && currentTab !== 'contratos') $('tab-dot').hidden = false;
+  knownContracts = active.length;
   for (const c of active) {
     const section = document.createElement('section');
     section.className = 'card';
