@@ -2,14 +2,14 @@
 import { connect, bindStatus } from '/shared/socket.js';
 import { createGraph, el, LOOP_EDGE } from './graph.js';
 import {
-  PANEL_META, initPanels, setPublicUrl, getPublicUrl, renderPanelBody, tickAuction,
+  PANEL_META, initPanels, setPublicUrl, getPublicUrl, renderPanelBody, tickAuction, tickLab,
   bankInit, bankEnqueue, bankOverride, isBankLog, BANK, ATTACKER,
 } from './panels.js';
 
 const MAX_LOGS = 4;
 const MAX_CHIPS = 40;
 const CONTRACT_ORDER = ['0xVOTACION', '0xSUBASTA', BANK, ATTACKER];
-const PANEL_NODE = { qr: 'wallets', votacion: 'contract:0xVOTACION', subasta: 'contract:0xSUBASTA', banco: `contract:${BANK}` };
+const PANEL_NODE = { qr: 'wallets', votacion: 'contract:0xVOTACION', subasta: 'contract:0xSUBASTA', banco: `contract:${BANK}`, pruebas: 'miner' };
 const $ = (id) => document.getElementById(id);
 
 const socket = connect('pantalla');
@@ -158,7 +158,7 @@ function render(s) {
   state = s;
   bankInit(s);
   const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
-    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length, JSON.stringify(s.miners)].join('|') + getPublicUrl();
+    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length, JSON.stringify(s.miners), JSON.stringify(s.lab)].join('|') + getPublicUrl();
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
   $('tamper-chip').hidden = !s.tampered;
   document.body.classList.toggle('tampered', !!s.tampered);
@@ -185,6 +185,7 @@ function tick() {
 }
 setInterval(tick, 250);
 setInterval(tickAuction, 250);
+setInterval(tickLab, 500);
 
 // ---------- bank cascade ----------
 

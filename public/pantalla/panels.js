@@ -7,6 +7,7 @@ export const PANEL_META = {
   votacion: { title: 'Votación', icon: '✓' },
   subasta: { title: 'Subasta', icon: '⚑' },
   banco: { title: 'Banco', icon: '▤' },
+  pruebas: { title: 'Pruebas', icon: '🧪' },
 };
 
 // app.js wires these in: getState() returns the latest state:full, onBankStep(logEntry|undefined) fires on each replay step.
@@ -263,3 +264,92 @@ export function renderPanelBody(panel, s, body) {
   else if (PANEL_RENDERERS[panel]) PANEL_RENDERERS[panel](s, body);
   else body.appendChild(el('div', 'placeholder', 'Disponible en la fase 3'));
 }
+
+// ---------- Pruebas (testing lab) ----------
+
+const fmtElapsed = (ms) => { const t = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+const labElapsed = (lab) => (lab.startedAt ? (lab.finishedAt || Date.now()) - lab.startedAt : 0);
+
+export function tickLab() {
+  const e = document.querySelector('.lab-elapsed[data-started-at]');
+  if (e) e.textContent = fmtElapsed(Date.now() - Number(e.dataset.startedAt));
+}
+
+PANEL_RENDERERS.pruebas = (s, body) => {
+  const lab = s.lab;
+  if (!lab) return void body.appendChild(el('div', 'placeholder', 'Sin laboratorio'));
+  const suites = lab.suites || [];
+  const started = !!lab.startedAt;
+  const main = el('div', 'lab');
+
+  const head = el('div', 'lab-head');
+  head.appendChild(el('div', 'lab-title', 'Laboratorio · fork de la red en vivo'));
+  const chips = el('div', 'lab-chips');
+  if (lab.running) chips.appendChild(el('span', 'chip c-running', 'corriendo'));
+  else if (started) chips.appendChild(el('span', 'chip c-info', 'terminado'));
+  if (lab.seed != null && started) chips.appendChild(el('span', 'chip c-neutral', `Semilla ${lab.seed}`));
+  if (started) {
+    const t = el('span', 'chip c-neutral lab-elapsed', fmtElapsed(labElapsed(lab)));
+    if (lab.running) t.dataset.startedAt = String(lab.startedAt);
+    chips.appendChild(t);
+  }
+  head.appendChild(chips);
+  main.appendChild(head);
+
+  const list = el('ul', 'lab-suites');
+  for (const su of suites) {
+    const bug = su.expectFail && su.status === 'fail';
+    const li = el('li', `lab-suite st-${su.status}${bug ? ' bug' : ''}`);
+    const icon = { pending: '○', running: '●', pass: '✔', fail: '✖' }[su.status] || '○';
+    li.appendChild(el('span', 'lab-ic', icon));
+    const nm = el('span', 'lab-name', su.name);
+    li.appendChild(nm);
+    li.appendChild(el('span', 'lab-slide', `diap. ${su.slides}`));
+    if (bug) li.appendChild(el('span', 'chip c-ok lab-bug', '¡bug encontrado!'));
+    const right = su.status === 'running' ? su.progress : su.status === 'pending' ? '' : su.summary;
+    li.appendChild(el('span', 'lab-right', right || ''));
+    list.appendChild(li);
+  }
+  main.appendChild(list);
+
+  if (!started) {
+    main.appendChild(el('div', 'lab-empty', 'Corre las pruebas desde el admin'));
+    const desc = el('ul', 'lab-desc');
+    for (const su of suites) desc.appendChild(el('li', null, `${su.name}: ${su.description}`));
+    main.appendChild(desc);
+    return void body.appendChild(main);
+  }
+
+  const failed = suites.find((x) => x.id === 'invariantes' && x.status === 'fail');
+  const bad = failed && (failed.cases || []).filter((c) => !c.ok).pop();
+  const focus = suites.find((x) => x.status === 'running')
+    || [...suites].reverse().find((x) => x.status === 'pass' || x.status === 'fail');
+  if (focus && !bad) {
+    const ul = el('ul', 'lab-cases');
+    for (const c of (focus.cases || []).slice(-5)) {
+      const li = el('li', c.ok ? 'ok' : 'bad');
+      li.appendChild(el('b', null, `${c.ok ? '✔' : '✖'} ${c.name}`));
+      const one = String(c.detail || '').split('\n')[0];
+      if (one) li.append(` — ${one}`);
+      ul.appendChild(li);
+    }
+    main.appendChild(ul);
+  }
+  if (bad) {
+    const box = el('div', 'lab-fail');
+    box.appendChild(el('div', 'lab-fail-title', `Invariante violada · ${bad.name}`));
+    box.appendChild(el('pre', 'mono lab-fail-detail', String(bad.detail || '')));
+    main.appendChild(box);
+  }
+
+  if (lab.real) {
+    const r = lab.real;
+    const bank = r.after?.bank ?? r.before?.bank;
+    const ok = r.intact === true;
+    const foot = el('div', `lab-foot ${ok ? 'ok' : r.intact === false ? 'bad' : ''}`);
+    foot.textContent = ok ? `Red real intacta ✔ · el banco real sigue en ${bank}`
+      : r.intact === false ? `✖ La red real cambió${r.note ? ' · ' + r.note : ''}` : (r.note || '');
+    if (foot.textContent) main.appendChild(foot);
+  }
+  body.appendChild(main);
+};

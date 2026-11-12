@@ -99,6 +99,18 @@
     </section>
 
     <section class="card">
+      <div class="node small k-step"><div class="ic">🧪</div><div class="tx"><div class="ttl">Pruebas</div><div class="sub">Laboratorio sobre un fork de la red</div></div><span id="lab-state" class="chip c-neutral" hidden></span></div>
+      <div class="body">
+      <p class="info">Semilla <b id="lab-seed">-</b></p>
+      <label for="lab-seed-in">Semilla (vacío = aleatoria)</label>
+      <input id="lab-seed-in" type="number" min="0" step="1" inputmode="numeric">
+      <button id="lab-all" type="button" class="btn primary">Correr todas</button>
+      <ul id="lab-suites" class="lab-suites"></ul>
+      <button id="lab-clear" type="button" class="btn">Limpiar</button>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="node small k-neutral"><div class="ic">⋯</div><div class="tx"><div class="ttl">Otros</div><div class="sub">Regalos y reinicio</div></div></div>
       <div class="body">
       <button id="gift" type="button" class="btn">Regalar +50 a todos</button>

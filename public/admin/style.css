@@ -34,8 +34,19 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-2); 
 .btn.danger.armed:hover:not(:disabled) { background: var(--bad); }
 
 .seg { display: flex; width: 100%; }
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 1 33.333%; border-top: 1px solid var(--border); }
+.seg.wrap button:nth-child(-n+3) { border-top: 0; }
+.seg.wrap button:nth-child(3n+1) { border-left: 0; }
 .seg button { flex: 1 1 0; min-width: 0; min-height: 48px; padding: 0 2px; font-size: 14px; font-weight: 600; }
 #panels button { font-size: 13px; }
 
 .validity { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .toast.error { border-left-color: var(--bad); }
+
+.lab-suites { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lab-suites li { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+.lab-suites .nm { flex: 1; min-width: 0; }
+.lab-suites .nm b { display: block; overflow-wrap: anywhere; }
+.lab-suites .nm small { color: var(--muted); }
+.lab-suites .btn { width: auto; min-width: 76px; padding: 0 12px; }
