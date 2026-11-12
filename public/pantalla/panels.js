@@ -80,10 +80,23 @@ function panelNetwork(s, body) {
     detail.appendChild(ul);
   }
 
+  // Miners first: during the mining part of the demo they matter most, and the balance ranking can be cut.
   const rank = el('div', 'net-col');
+  const miners = (s.miners || []).slice(0, 5);
+  if (miners.length) {
+    rank.appendChild(el('h3', null, 'Mineros'));
+    const ml = el('ol', 'ranking miners');
+    miners.forEach((m) => {
+      const li = el('li');
+      li.appendChild(el('span', 'rk-name', (m.mining ? '⛏ ' : '') + m.nick));
+      li.appendChild(el('span', 'rk-bal', `${m.won} ${m.won === 1 ? 'bloque' : 'bloques'}`));
+      ml.appendChild(li);
+    });
+    rank.appendChild(ml);
+  }
   rank.appendChild(el('h3', null, 'Ranking de saldos'));
   const top = (s.accounts || []).filter((a) => !a.system)
-    .sort((a, b) => Number(b.balance) - Number(a.balance)).slice(0, 8);
+    .sort((a, b) => Number(b.balance) - Number(a.balance)).slice(0, miners.length ? 5 : 8);
   const ol = el('ol', 'ranking');
   if (!top.length) ol.appendChild(el('li', 'more', 'Aún no hay participantes'));
   top.forEach((a) => {

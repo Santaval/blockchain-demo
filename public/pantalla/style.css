@@ -144,3 +144,5 @@ body.tampered .stage::after { opacity: 1; animation: blink 1.2s ease-in-out infi
 .strip { display: flex; gap: .4em; overflow: hidden; flex: 1; min-width: 0; padding: 2px; }
 .tx-chip { flex: none; font-size: .95em; font-variant-numeric: tabular-nums; }
 .strip-empty { color: var(--muted); }
+
+.ranking + h3 { margin-top: .6em; }

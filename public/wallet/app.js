@@ -47,6 +47,7 @@ function loadStored() {
 async function register() {
   const res = await emitAck('register', { nick, pubKey: pubHex });
   if (res?.ok) {
+    if (wantMining) joinPool(); // reconnect or server reset: the server forgot us
     $('onboarding').hidden = true;
     $('main').hidden = false;
     $('tabs').hidden = false;
@@ -166,7 +167,8 @@ function renderHistory() {
   for (const h of state?.history || []) {
     const mine = h.from === state.address;
     let label = mine ? `Enviaste a ${h.toNick || h.to}` : `Recibiste de ${h.fromNick || h.from}`;
-    if (h.call) label = `Llamaste ${h.call.method} en ${h.toNick || h.to}`;
+    if (h.reward) label = 'Recompensa de minería';
+    else if (h.call) label = `Llamaste ${h.call.method} en ${h.toNick || h.to}`;
     else if (h.internal) label = mine ? `Pagaste a ${h.toNick || h.to}` : `${h.fromNick || h.from} te pagó`;
     let st, cls = h.status;
     if (h.status === 'confirmed') st = `confirmada (bloque #${h.block})`;
@@ -189,10 +191,11 @@ function render() {
   renderNicks();
   renderHistory();
   renderContracts();
+  applyPool(state.pool);
 }
 
 // ---- Tabs: one section per screen, remembered for this browser tab ----
-const TABS = ['inicio', 'enviar', 'contratos', 'historial'];
+const TABS = ['inicio', 'enviar', 'minar', 'contratos', 'historial'];
 let currentTab = 'inicio';
 let knownContracts = 0;
 function showTab(name) {
@@ -201,6 +204,7 @@ function showTab(name) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.dataset.view !== name; });
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   if (name === 'contratos') $('tab-dot').hidden = true;
+  if (name === 'minar') $('mine-dot').hidden = true;
   try { sessionStorage.setItem('wallet.tab', name); } catch { /* ignore */ }
   window.scrollTo(0, 0);
 }
@@ -457,6 +461,189 @@ function addRejected(hash, toNick, amount, reason) {
   renderHistory();
 }
 
+
+// ---- Pool mining ----
+// `wantMining` is the user's intent: it survives reconnects and server resets (we re-join) but not a disabled pool.
+let wantMining = false;
+let worker = null;
+let job = null;            // current { round, index, difficulty, prefix, rate, reward }
+let poolInfo = null;       // latest { enabled, reason, etaSeconds, won, reward, ... }
+let poolWasEnabled = true;
+let lastProgressAt = 0;
+let wakeLock = null;
+let joining = false;
+
+function setStatus(text) { $('mine-status').textContent = text; }
+
+function paintHash(hash, difficulty) {
+  const box = $('mine-hash');
+  const zeros = (hash.match(/^0*/) || [''])[0].length;
+  box.replaceChildren();
+  if (zeros) { const z = document.createElement('span'); z.className = 'zeros'; z.textContent = hash.slice(0, zeros); box.appendChild(z); }
+  box.append(hash.slice(zeros) || (zeros ? '' : '-'));
+  box.classList.toggle('hit', !!hash && zeros >= difficulty);
+}
+
+function renderMineUi() {
+  const btn = $('mine-btn');
+  const disabled = poolInfo && !poolInfo.enabled;
+  btn.textContent = wantMining ? 'Detener' : 'Empezar a minar';
+  btn.classList.toggle('stop', wantMining);
+  btn.classList.toggle('primary', !wantMining);
+  btn.disabled = !!disabled || joining;
+  $('mine-live').hidden = !wantMining;
+  $('mine-won').textContent = poolInfo?.won ?? 0;
+  $('mine-reward').textContent = poolInfo?.reward ?? 10;
+}
+
+async function acquireWakeLock() {
+  try {
+    if (navigator.wakeLock && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch { /* unsupported or denied: the hint still asks to keep the screen on */ }
+}
+function releaseWakeLock() {
+  try { wakeLock?.release(); } catch { /* ignore */ }
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && wantMining) acquireWakeLock();
+});
+
+function stopWorker() {
+  if (worker) { try { worker.postMessage({ type: 'stop' }); } catch { /* ignore */ } worker.terminate(); worker = null; }
+  job = null;
+}
+
+async function joinPool() {
+  const res = await emitAck('pool:join', {});
+  if (!res?.ok) {
+    wantMining = false;
+    releaseWakeLock();
+    stopWorker();
+    if (poolInfo) poolInfo.enabled = res?.reason ? false : poolInfo.enabled;
+    showPoolWarn(res?.reason || 'No se pudo unir a los mineros');
+    renderMineUi();
+    return false;
+  }
+  if (poolInfo) { poolInfo.reward = res.reward ?? poolInfo.reward; }
+  if (!job) setStatus('Esperando el próximo bloque…');
+  return true;
+}
+
+function showPoolWarn(text) {
+  $('mine-warn').textContent = text;
+  $('mine-warn').hidden = !text;
+}
+
+async function startMining() {
+  if (joining || wantMining) return;
+  joining = true;
+  renderMineUi();
+  $('mine-win').hidden = true;
+  wantMining = true;
+  setStatus('Uniéndote a los mineros…');
+  const ok = await joinPool();
+  joining = false;
+  if (ok) { showPoolWarn(''); acquireWakeLock(); }
+  renderMineUi();
+}
+
+function stopMining() {
+  wantMining = false;
+  stopWorker();
+  releaseWakeLock();
+  socket.emit('pool:leave', {});
+  setStatus('Pulsa el botón para unirte a los mineros.');
+  renderMineUi();
+}
+
+$('mine-btn').addEventListener('click', () => { if (wantMining) stopMining(); else startMining(); });
+
+// Reacts to pool info coming from `state` or `pool:state`.
+function applyPool(p) {
+  if (!p) return;
+  poolInfo = p;
+  if (!p.enabled) {
+    if (wantMining) {
+      // The server keeps registered miners, so leave explicitly.
+      wantMining = false;
+      stopWorker();
+      releaseWakeLock();
+      socket.emit('pool:leave', {});
+      setStatus('Minería detenida.');
+    }
+    showPoolWarn(p.reason || 'La minería está desactivada');
+  } else if (!poolWasEnabled) {
+    showPoolWarn('');
+    setStatus('Puedes volver a minar');
+  }
+  poolWasEnabled = p.enabled;
+  renderMineUi();
+}
+
+function onJob(j) {
+  if (!wantMining) return;
+  stopWorker();
+  job = j;
+  $('mine-win').hidden = true;
+  lastProgressAt = 0;
+  setStatus(`Minando bloque #${j.index}`);
+  $('mine-nonce').textContent = '0';
+  $('mine-tried').textContent = '0';
+  paintHash('', j.difficulty);
+  try {
+    worker = new Worker('/wallet/miner-worker.js', { type: 'module' });
+  } catch (ex) {
+    setStatus('Tu navegador no puede minar: ' + ex.message);
+    return;
+  }
+  worker.onmessage = ({ data }) => onWorkerMessage(data);
+  worker.postMessage({ type: 'job', job: j });
+}
+
+async function onWorkerMessage(m) {
+  if (!job || m.round !== job.round) return;
+  if (m.type === 'progress') {
+    $('mine-nonce').textContent = String(m.nonce);
+    $('mine-tried').textContent = String(m.tried);
+    paintHash(m.hash, job.difficulty);
+    const now = Date.now();
+    if (now - lastProgressAt >= 500) {
+      lastProgressAt = now;
+      socket.emit('pool:progress', { round: m.round, tried: m.tried, hash: m.best || m.hash });
+    }
+  } else if (m.type === 'found') {
+    const j = job;
+    $('mine-nonce').textContent = String(m.nonce);
+    paintHash(m.hash, j.difficulty);
+    setStatus('¡Encontraste una solución! Enviando…');
+    stopWorker();
+    const res = await emitAck('pool:submit', { round: j.round, nonce: m.nonce });
+    if (!wantMining) return;
+    // pool:won arrives before this ack, so a win is already on screen: just wait for the next round.
+    if (res?.ok) setStatus('Esperando el próximo bloque…');
+    else setStatus(`${res?.reason || 'No se aceptó la solución'}. Esperando el próximo bloque…`);
+  }
+}
+
+function onWon(w) {
+  stopWorker(); // the round is over for everybody
+  if (w.address === state?.address) {
+    const msg = `¡Encontraste el bloque #${w.index}! +${w.reward}`;
+    $('mine-win').textContent = msg;
+    $('mine-win').hidden = false;
+    toast(msg);
+    if (currentTab !== 'minar') $('mine-dot').hidden = false;
+    if (wantMining) setStatus('Esperando el próximo bloque…');
+  } else if (wantMining) {
+    $('mine-win').hidden = true;
+    setStatus(`${w.nick} encontró el bloque #${w.index}. Esperando el próximo bloque…`);
+  }
+}
+
 // ---- Socket ----
 const socket = connect('wallet');
 bindStatus(socket, $('status'));
@@ -469,7 +656,19 @@ socket.on('tx:rejected', ({ hash, reason }) => {
   addRejected(hash, h?.toNick || '?', h?.amount ?? '?', reason);
 });
 // tx:confirmed / tx:failed are reflected by the next `state` push.
-socket.on('reset', () => { localNonce = null; rejected.length = 0; if (pubHex && nick) startWithKeys(); });
+socket.on('reset', () => {
+  localNonce = null; rejected.length = 0;
+  stopWorker(); // the old round no longer exists; a new job arrives after re-joining
+  if (pubHex && nick) startWithKeys();
+});
+socket.on('disconnect', () => { stopWorker(); if (wantMining) setStatus('Reconectando…'); });
+socket.on('pool:job', onJob);
+socket.on('pool:won', onWon);
+socket.on('pool:end', ({ reason }) => {
+  stopWorker();
+  if (wantMining) setStatus(`${reason || 'Ronda cancelada'}. Esperando el próximo bloque…`);
+});
+socket.on('pool:state', (p) => applyPool(p));
 
 // ---- Init ----
 (async () => {

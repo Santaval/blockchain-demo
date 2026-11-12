@@ -27,6 +27,15 @@ let mining = null;
 let minedLabel = '';
 let minedTimer = null;
 const miner = { nonce: '-', hash: '', hit: false };
+let wonLabel = '';
+let wonTimer = null;
+
+function humanEta(sec) {
+  if (sec < 60) return `~${Math.max(1, Math.round(sec))} s`;
+  if (sec < 3600) return `~${Math.round(sec / 60)} min`;
+  return `~${Math.round(sec / 3600)} h`;
+}
+const poolEta = (p) => `Dificultad ${state.difficulty}: ${humanEta(p.etaSeconds)} para el grupo`;
 
 fetch('/api/info').then((r) => r.json()).then((i) => {
   setPublicUrl(i.url);
@@ -43,9 +52,12 @@ const isRevert = (l) => l.message.startsWith('Revertido');
 
 function refreshMiner() {
   let sub;
-  if (mining) sub = `${mining.remine ? 'Re-minando' : 'Minando'} #${mining.index}`;
+  if (wonLabel) sub = wonLabel;
+  else if (mining?.pool) sub = `Minando entre ${mining.miners}`;
+  else if (mining) sub = `${mining.remine ? 'Re-minando' : 'Minando'} #${mining.index}`;
   else if (minedLabel) sub = minedLabel;
   else if (state && state.minerRunning === false) sub = 'En pausa';
+  else if (state?.pool && !state.pool.enabled && state.miners?.length) sub = poolEta(state.pool); // miners have left by now; still show the lesson
   else sub = 'Esperando transacciones…';
   graph.setMiner({ sub, active: !!mining, nonce: miner.nonce, hash: miner.hash, hit: miner.hit });
 }
@@ -146,7 +158,7 @@ function render(s) {
   state = s;
   bankInit(s);
   const pSig = [s.panel, s.participants, s.lastBlockStatus?.map((x) => x.hash + x.status).join(), s.chain?.at(-1)?.hash,
-    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length].join('|') + getPublicUrl();
+    s.accounts?.map((a) => a.nick + a.balance).join(), JSON.stringify(s.contracts), s.contractLogs?.length, JSON.stringify(s.miners)].join('|') + getPublicUrl();
   if (pSig !== sig.panel) { sig.panel = pSig; renderPanel(s); }
   $('tamper-chip').hidden = !s.tampered;
   document.body.classList.toggle('tampered', !!s.tampered);
@@ -221,6 +233,18 @@ socket.on('block:mined', (b) => {
     minedTimer = setTimeout(() => { if (!mining) { minedLabel = ''; setMining(null); } }, 1500);
   }
   graph.token(`miner>block:${b.index}`, { cls: 't-ok', onDone: () => graph.pop(`block:${b.index}`) });
+});
+
+socket.on('pool:won', (w) => {
+  wonLabel = `¡${w.nick} ganó +${w.reward}!`;
+  clearTimeout(wonTimer);
+  wonTimer = setTimeout(() => { wonLabel = ''; refreshMiner(); }, 3000);
+  // Participantes -> Mempool -> Minero (the graph has no direct edge between the two ends)
+  graph.token('wallets>mempool', {
+    cls: 't-ok',
+    onDone: () => graph.token('mempool>miner', { cls: 't-ok', onDone: () => graph.pop('miner') }),
+  });
+  refreshMiner();
 });
 
 socket.on('block:remined', () => setMining(null));
