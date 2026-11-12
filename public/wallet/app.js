@@ -206,6 +206,43 @@ function renderContracts() {
   }
 }
 
+CARD_RENDERERS['0xVOTACION'] = (card, c) => {
+  const v = c.view;
+  const q = document.createElement('p');
+  q.className = 'vote-question';
+  q.textContent = v.question;
+  card.appendChild(q);
+  const myVote = c.me?.myVote;
+  if (myVote != null) {
+    const done = document.createElement('p');
+    done.className = 'vote-done';
+    done.textContent = `Ya votaste: ${v.options[myVote]}`;
+    card.appendChild(done);
+  } else if (!v.open) {
+    const closed = document.createElement('p');
+    closed.className = 'muted';
+    closed.textContent = 'La votación está cerrada';
+    card.appendChild(closed);
+  } else {
+    v.options.forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'vote-btn';
+      b.textContent = opt;
+      b.addEventListener('click', async () => {
+        card.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        const res = await callContract(c.address, 'votar', [i], 0);
+        if (!res?.ok) card.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+      });
+      card.appendChild(b);
+    });
+  }
+  const counts = document.createElement('p');
+  counts.className = 'muted small';
+  counts.textContent = v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ');
+  card.appendChild(counts);
+};
+
 // Builds, signs and submits a tx that calls a contract method. Returns the ack ({ ok, reason }).
 async function callContract(address, method, args = [], amount = 0) {
   if (sending || !state) return { ok: false, reason: 'Espera un momento' };

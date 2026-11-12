@@ -136,6 +136,26 @@ $('tamper').addEventListener('click', () => send('admin:tamper', {
 $('remine').addEventListener('click', () => send('admin:remine', { block: Number($('t-block').value) }, 'Re-minando…'));
 $('restore').addEventListener('click', () => send('admin:restore', undefined, 'Cadena restaurada'));
 
+// Votación: the form is filled once from the server so typing is not overwritten by later state pushes.
+let votingFilled = false;
+$('v-save').addEventListener('click', () => send('admin:voting-config', {
+  question: $('v-question').value,
+  options: $('v-options').value.split('\n').map((o) => o.trim()).filter(Boolean),
+}, 'Votación guardada'));
+$('v-open').addEventListener('click', () => send('admin:voting-open', undefined, 'Votación abierta'));
+$('v-close').addEventListener('click', () => send('admin:voting-close', undefined, 'Votación cerrada'));
+function renderVoting(s) {
+  const v = (s.contracts || []).find((c) => c.address === '0xVOTACION')?.view;
+  if (!v) return;
+  if (!votingFilled && v.question) {
+    votingFilled = true;
+    $('v-question').value = v.question;
+    $('v-options').value = v.options.join('\n');
+  }
+  $('v-state').textContent = v.open ? '· abierta' : '· cerrada';
+  $('v-counts').textContent = v.options.length ? v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ') : 'Sin configurar';
+}
+
 function render(s) {
   if (!loggedIn) return;
   panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
@@ -147,6 +167,7 @@ function render(s) {
   $('difficulty').value = String(s.difficulty);
   $('interval').value = String(s.mineIntervalMs);
   renderTamper(s);
+  renderVoting(s);
 }
 socket.on('state:full', render);
 socket.on('mine:start', () => { $('mining').hidden = false; $('remine-nonce').textContent = '0'; });

@@ -1,3 +1,5 @@
 // Registers every contract of the demo: each contract file adds one import and one registerContract() line here.
-// (empty until #14)
-export {};
+import { registerContract } from './engine.js';
+import voting from './voting.js';
+
+registerContract(voting);

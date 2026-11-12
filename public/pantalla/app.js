@@ -191,6 +191,38 @@ function panelNetwork(s, body) {
 // Contract panels plug in here: PANEL_RENDERERS[panelName] = (state, body) => {...}.
 const PANEL_RENDERERS = {};
 
+PANEL_RENDERERS.votacion = (s, body) => {
+  const c = (s.contracts || []).find((x) => x.address === '0xVOTACION');
+  const v = c?.view;
+  if (!v || !v.question) return void body.appendChild(el('div', 'placeholder', 'Sin votación configurada'));
+  const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));
+  const main = el('div', 'vote-main');
+  const head = el('div', 'vote-head');
+  head.appendChild(el('div', 'vote-question', v.question));
+  head.appendChild(el('span', 'vote-badge' + (v.open ? ' open' : ''), v.open ? 'ABIERTA' : 'CERRADA'));
+  main.appendChild(head);
+  const max = Math.max(1, ...v.counts);
+  v.options.forEach((opt, i) => {
+    const r = el('div', 'vote-row');
+    r.appendChild(el('span', 'vote-opt', opt));
+    const track = el('div', 'vote-track');
+    const bar = el('div', 'vote-bar');
+    bar.style.width = (v.counts[i] / max) * 100 + '%';
+    track.appendChild(bar);
+    r.append(track, el('span', 'vote-count', String(v.counts[i])));
+    main.appendChild(r);
+  });
+  const list = el('div', 'vote-list');
+  list.appendChild(el('h3', null, `Votos (${v.votes.length})`));
+  const ul = el('ul');
+  [...v.votes].reverse().slice(0, 12).forEach((x) => {
+    ul.appendChild(el('li', null, `${nick.get(x.address) || x.nick} → ${v.options[x.option]}`));
+  });
+  if (!v.votes.length) ul.appendChild(el('li', 'more', 'Aún no hay votos'));
+  list.appendChild(ul);
+  body.append(main, list);
+};
+
 const MAX_LOGS = 8;
 function renderContractLog(s) {
   const nick = new Map((s.accounts || []).map((a) => [a.address, a.nick]));

@@ -33,3 +33,6 @@ button:disabled { opacity:.5; }
 .toast { position:fixed; left:12px; right:12px; bottom:16px; max-width:456px; margin:0 auto; background:#111827; color:#fff; padding:14px; border-radius:12px; text-align:center; }
 #contracts .card h2 { color:var(--accent); }
 [hidden] { display:none !important; }
+.vote-question { font-size:1.2rem; font-weight:600; margin:4px 0 8px; }
+.vote-btn { min-height:64px; font-size:1.2rem; }
+.vote-done { color:var(--ok); font-weight:700; font-size:1.2rem; margin:8px 0; }

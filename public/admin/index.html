@@ -56,6 +56,20 @@
     </section>
 
     <section class="card">
+      <h2>Votación <span id="v-state" class="info"></span></h2>
+      <label for="v-question">Pregunta</label>
+      <input id="v-question" maxlength="120">
+      <label for="v-options">Opciones (una por línea, 2 a 6)</label>
+      <textarea id="v-options" rows="4"></textarea>
+      <button id="v-save" type="button">Guardar</button>
+      <div class="grid">
+        <button id="v-open" type="button" class="primary">Abrir</button>
+        <button id="v-close" type="button">Cerrar</button>
+      </div>
+      <p id="v-counts" class="info"></p>
+    </section>
+
+    <section class="card">
       <h2>Otros</h2>
       <button id="gift" type="button">Regalar +50 a todos</button>
       <button id="reset" type="button" class="danger">Reset total</button>
