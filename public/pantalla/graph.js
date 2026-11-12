@@ -1,11 +1,11 @@
 // SVG workflow canvas: HTML node cards inside foreignObject, bezier edges and animated tokens.
-// Fixed logical viewBox (1600x900) that the browser fits to the stage; no pan or zoom.
+// Fixed logical viewBox (1600x760) that the browser fits to the stage; no pan or zoom.
 // Nodes are persistent elements: they are only refilled when their key changes, so animations are not restarted.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_TOKENS = 40;
 const PENDING_TTL_MS = 3000;
-const BLOCK_WINDOW = 6;
+const BLOCK_WINDOW = 5; // newest block lands under the miner, clear of the contract column
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 export function el(tag, cls, text) {
@@ -196,7 +196,7 @@ export function createGraph(svg) {
       const id = `block:${b.index}`;
       const nTx = b.txs;
       defs.set(id, {
-        x: 20 + (first + i) * 264, y: 520, w: 228, h: 220, kind: b.invalid ? 'sink' : 'out', block: true,
+        x: 10 + (first + i) * 262, y: 520, w: 228, h: 220, kind: b.invalid ? 'sink' : 'out', block: true,
         icon: b.invalid ? '✖' : '▣', title: b.index === 0 ? 'Génesis' : `#${b.index}`, badge: b.invalid ? '✖' : '',
         key: [b.hash, b.nonce, nTx, b.invalid ? b.reason || 'x' : ''].join('|'),
         sub: () => hashEl(b.hash || '', 8),
