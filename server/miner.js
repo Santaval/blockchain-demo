@@ -2,11 +2,12 @@
 import { MINE_INTERVAL_MS, DIFFICULTY, MAX_TXS_PER_BLOCK, MINE_BATCH, MINE_PAUSE_MS } from './config.js';
 import { computeBlockHash } from './crypto.js';
 import { state, events, getBalance } from './state.js';
+import { executeTx, isContract } from './contracts/engine.js';
 
 let difficulty = DIFFICULTY;
 let mineIntervalMs = MINE_INTERVAL_MS;
 let timer = null;
-let contractExecutor = () => ({ ok: false, reason: 'Contratos no disponibles todavía' });
+let contractExecutor = executeTx;
 
 export const getDifficulty = () => difficulty;
 export const setDifficulty = (n) => { difficulty = n; };
@@ -16,11 +17,11 @@ export function setMineInterval(ms) {
   if (timer) { stopMiner(); startMiner(); }
 }
 
-// fn(tx) -> { ok: true } | { ok: false, reason }. It handles its own balance moves.
+// fn(tx, { time, block }) -> { ok: true } | { ok: false, reason }. It handles its own balance moves.
 export function setContractExecutor(fn) { contractExecutor = fn; }
 
-function applyTx(tx) {
-  if (tx.call) return contractExecutor(tx);
+function applyTx(tx, env) {
+  if (tx.call || isContract(tx.to)) return contractExecutor(tx, env);
   if (getBalance(tx.from) < tx.amount) return { ok: false, reason: 'Saldo insuficiente' };
   state.balances.set(tx.from, getBalance(tx.from) - tx.amount); // Infinity - n stays Infinity
   state.balances.set(tx.to, getBalance(tx.to) + tx.amount);
@@ -43,7 +44,7 @@ function commit(block) {
   state.mempool.splice(0, txs.length);
   const results = txs.map((tx) => {
     let result;
-    try { result = applyTx(tx) ?? { ok: false, reason: 'Error al aplicar' }; }
+    try { result = applyTx(tx, { time: block.timestamp, block: index }) ?? { ok: false, reason: 'Error al aplicar' }; }
     catch { result = { ok: false, reason: 'Error al aplicar' }; }
     state.nonces.set(tx.from, (state.nonces.get(tx.from) ?? 0) + 1);
     state.txStatus.set(tx.hash, result.ok

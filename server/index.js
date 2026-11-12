@@ -5,6 +5,7 @@ import express from 'express';
 import QRCode from 'qrcode';
 import { Server } from 'socket.io';
 import { PORT, PUBLIC_URL } from './config.js';
+import './contracts/index.js'; // registers the demo contracts
 import { startMiner } from './miner.js';
 import { attachSync } from './sync.js';
 

@@ -39,10 +39,16 @@
       <div id="main-panel-body" class="main-panel-body"></div>
     </section>
 
-    <section class="mempool-section">
-      <h2>Mempool <span id="mempool-count" class="count">0</span></h2>
-      <ul id="mempool" class="mempool"></ul>
-    </section>
+    <div class="side">
+      <section class="mempool-section">
+        <h2>Mempool <span id="mempool-count" class="count">0</span></h2>
+        <ul id="mempool" class="mempool"></ul>
+      </section>
+      <section class="log-section">
+        <h2>Registro de contratos</h2>
+        <ul id="contract-log" class="contract-log"></ul>
+      </section>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

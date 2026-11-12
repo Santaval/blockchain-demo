@@ -1,6 +1,7 @@
 // Synchronous transaction validator + mempool entry point.
 // No await anywhere: concurrent submissions are serialized by the event loop.
 import { addressFromPubKey, computeTxHash, verifyTxSignature } from './crypto.js';
+import { isContract } from './contracts/engine.js';
 import { state, events, SYSTEM, availableBalance, expectedNonce } from './state.js';
 
 const SYSTEM_ADDRESSES = new Set(Object.values(SYSTEM));
@@ -17,9 +18,14 @@ export function validateTx(tx) {
         (typeof tx.call !== 'object' || typeof tx.call.method !== 'string' || !Array.isArray(tx.call.args))) {
       return fail('Transacción mal formada');
     }
-    if (!Number.isInteger(tx.amount) || tx.amount <= 0) return fail('Monto inválido');
+    const hasCall = tx.call !== undefined && tx.call !== null;
+    if (hasCall && (!isStr(tx.call.method) || JSON.stringify(tx.call).length > 500)) {
+      return fail(isStr(tx.call.method) ? 'Llamada demasiado grande' : 'Transacción mal formada');
+    }
+    if (!Number.isInteger(tx.amount) || tx.amount < (hasCall ? 0 : 1)) return fail('Monto inválido');
     if (SYSTEM_ADDRESSES.has(tx.from)) return fail('Remitente no permitido');
     if (!state.accounts.has(tx.to)) return fail('Destinatario desconocido');
+    if (hasCall && !isContract(tx.to)) return fail('El destinatario no es un contrato');
     if (tx.to === tx.from) return fail('No puedes enviarte a ti mismo');
     if (addressFromPubKey(tx.pubKey) !== tx.from) return fail('La dirección no corresponde a la llave pública');
     if (!verifyTxSignature(tx)) return fail('Firma inválida');

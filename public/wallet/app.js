@@ -158,7 +158,9 @@ function renderHistory() {
   }
   for (const h of state?.history || []) {
     const mine = h.from === state.address;
-    const label = mine ? `Enviaste a ${h.toNick || h.to}` : `Recibiste de ${h.fromNick || h.from}`;
+    let label = mine ? `Enviaste a ${h.toNick || h.to}` : `Recibiste de ${h.fromNick || h.from}`;
+    if (h.call) label = `Llamaste ${h.call.method} en ${h.toNick || h.to}`;
+    else if (h.internal) label = mine ? `Pagaste a ${h.toNick || h.to}` : `${h.fromNick || h.from} te pagó`;
     let st, cls = h.status;
     if (h.status === 'confirmed') st = `confirmada (bloque #${h.block})`;
     else if (h.status === 'failed') st = `fallida (${h.reason || 'sin motivo'})`;
@@ -177,6 +179,199 @@ function render() {
   $('height').textContent = state.height;
   renderNicks();
   renderHistory();
+  renderContracts();
+}
+
+// ---- Contracts ----
+// Per-contract card renderers: CARD_RENDERERS[address] = (container, contract) => {...}. Unknown ones show the name only.
+const CARD_RENDERERS = {};
+let contractsSig = null;
+
+function renderContracts() {
+  const active = (state?.contracts || []).filter((c) => c.active);
+  const sig = JSON.stringify(active);
+  if (sig === contractsSig) return; // keep inputs and focus while nothing changed
+  contractsSig = sig;
+  const root = $('contracts');
+  root.replaceChildren();
+  root.hidden = active.length === 0;
+  for (const c of active) {
+    const card = document.createElement('section');
+    card.className = 'card';
+    const title = document.createElement('h2');
+    title.textContent = c.name;
+    card.appendChild(title);
+    CARD_RENDERERS[c.address]?.(card, c);
+    root.appendChild(card);
+  }
+}
+
+CARD_RENDERERS['0xVOTACION'] = (card, c) => {
+  const v = c.view;
+  const q = document.createElement('p');
+  q.className = 'vote-question';
+  q.textContent = v.question;
+  card.appendChild(q);
+  const myVote = c.me?.myVote;
+  if (myVote != null) {
+    const done = document.createElement('p');
+    done.className = 'vote-done';
+    done.textContent = `Ya votaste: ${v.options[myVote]}`;
+    card.appendChild(done);
+  } else if (!v.open) {
+    const closed = document.createElement('p');
+    closed.className = 'muted';
+    closed.textContent = 'La votación está cerrada';
+    card.appendChild(closed);
+  } else {
+    v.options.forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'vote-btn';
+      b.textContent = opt;
+      b.addEventListener('click', async () => {
+        card.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        const res = await callContract(c.address, 'votar', [i], 0);
+        if (!res?.ok) card.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+      });
+      card.appendChild(b);
+    });
+  }
+  const counts = document.createElement('p');
+  counts.className = 'muted small';
+  counts.textContent = v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ');
+  card.appendChild(counts);
+};
+
+CARD_RENDERERS['0xSUBASTA'] = (card, c) => {
+  const v = c.view;
+  const add = (cls, text) => {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    card.appendChild(p);
+    return p;
+  };
+  add('auction-item', v.item);
+  add('muted', v.highest ? `Oferta más alta: ${v.highest.amount} (${v.highest.nick})` : 'Sin ofertas todavía');
+  if (!v.open) {
+    add('auction-done', v.winner ? `Subasta cerrada. Ganó ${v.winner.nick} con ${v.winner.amount}` : 'Subasta cerrada');
+    return;
+  }
+  const count = add('auction-count', '');
+  count.dataset.endsAt = v.endsAt;
+  updateAuctionCountdown();
+  if (c.me?.isHighest) add('vote-done', 'Vas ganando');
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Tu oferta';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = 'Ofertar';
+  b.addEventListener('click', async () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe una oferta válida');
+    b.disabled = true;
+    const res = await callContract(c.address, 'ofertar', [], amount);
+    if (res?.ok) input.value = '';
+    b.disabled = false;
+  });
+  card.append(input, b);
+};
+
+CARD_RENDERERS['0xBANCO'] = (card, c) => {
+  const add = (cls, text) => {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    card.appendChild(p);
+  };
+  add('muted', `Saldo del banco: ${c.view.balance}`);
+  add('auction-item', `Tu depósito: ${c.me?.myDeposit ?? 0}`);
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Monto a depositar';
+  const dep = document.createElement('button');
+  dep.type = 'button';
+  dep.textContent = 'Depositar';
+  const out = document.createElement('button');
+  out.type = 'button';
+  out.className = 'secondary';
+  out.textContent = 'Retirar';
+  out.disabled = !(c.me?.myDeposit > 0);
+  const run = async (method, amount) => {
+    dep.disabled = out.disabled = true;
+    const res = await callContract(c.address, method, [], amount);
+    if (res?.ok) input.value = '';
+    dep.disabled = false;
+    out.disabled = !(c.me?.myDeposit > 0);
+  };
+  dep.addEventListener('click', () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe un monto válido');
+    run('depositar', amount);
+  });
+  out.addEventListener('click', () => run('retirar', 0));
+  card.append(input, dep, out);
+};
+
+CARD_RENDERERS['0xATACANTE'] = (card, c) => {
+  const p = document.createElement('p');
+  p.className = 'muted';
+  p.textContent = 'Deposita en el banco y trata de sacar más de lo que pusiste.';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.placeholder = 'Monto del ataque';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'danger';
+  b.textContent = 'Atacar';
+  b.addEventListener('click', async () => {
+    const amount = Number(input.value);
+    if (!Number.isInteger(amount) || amount < 1) return toast('Escribe un monto válido');
+    b.disabled = true;
+    const res = await callContract(c.address, 'atacar', [], amount);
+    if (res?.ok) input.value = '';
+    b.disabled = false;
+  });
+  card.append(p, input, b);
+};
+
+function updateAuctionCountdown() {
+  const e = document.querySelector('.auction-count');
+  if (!e) return;
+  const left = Math.max(0, Math.ceil((Number(e.dataset.endsAt) - Date.now()) / 1000));
+  e.textContent = left > 0 ? `Quedan ${left} s` : 'Cerrando…';
+}
+setInterval(updateAuctionCountdown, 500);
+
+// Builds, signs and submits a tx that calls a contract method. Returns the ack ({ ok, reason }).
+async function callContract(address, method, args = [], amount = 0) {
+  if (sending || !state) return { ok: false, reason: 'Espera un momento' };
+  sending = true;
+  try {
+    const nonce = localNonce ?? state.nonce;
+    const partial = await buildTx({ to: address, amount, nonce, call: { method, args }, pubKey: pubHex });
+    const tx = await signTx(privateKey, partial);
+    const res = await emitAck('tx:submit', tx);
+    if (res?.ok) { localNonce = nonce + 1; toast('Llamada enviada'); }
+    else toast(res?.reason || 'Llamada rechazada');
+    return res;
+  } catch (ex) {
+    toast('Error: ' + ex.message);
+    return { ok: false, reason: ex.message };
+  } finally {
+    sending = false;
+  }
 }
 
 // ---- Send ----

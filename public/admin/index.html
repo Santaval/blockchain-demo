@@ -56,6 +56,40 @@
     </section>
 
     <section class="card">
+      <h2>Votación <span id="v-state" class="info"></span></h2>
+      <label for="v-question">Pregunta</label>
+      <input id="v-question" maxlength="120">
+      <label for="v-options">Opciones (una por línea, 2 a 6)</label>
+      <textarea id="v-options" rows="4"></textarea>
+      <button id="v-save" type="button">Guardar</button>
+      <div class="grid">
+        <button id="v-open" type="button" class="primary">Abrir</button>
+        <button id="v-close" type="button">Cerrar</button>
+      </div>
+      <p id="v-counts" class="info"></p>
+    </section>
+
+    <section class="card">
+      <h2>Subasta <span id="a-state" class="info"></span></h2>
+      <label for="a-item">Artículo</label>
+      <input id="a-item" maxlength="60">
+      <label for="a-seconds">Duración (segundos, 15 a 600)</label>
+      <input id="a-seconds" type="number" min="15" max="600" value="90">
+      <button id="a-open" type="button" class="primary">Abrir subasta</button>
+      <p id="a-info" class="info"></p>
+    </section>
+
+    <section class="card">
+      <h2>Banco <span id="b-state" class="info"></span></h2>
+      <button id="b-toggle" type="button">Habilitar botón de ataque</button>
+      <label for="b-amount">Monto (1 a 1000)</label>
+      <input id="b-amount" type="number" min="1" max="1000" value="10">
+      <button id="b-seed" type="button">Sembrar banco (Sistema deposita)</button>
+      <button id="b-attack" type="button" class="danger">Lanzar ataque desde 0xHACKER</button>
+      <p id="b-info" class="info"></p>
+    </section>
+
+    <section class="card">
       <h2>Otros</h2>
       <button id="gift" type="button">Regalar +50 a todos</button>
       <button id="reset" type="button" class="danger">Reset total</button>

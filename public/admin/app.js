@@ -136,6 +136,62 @@ $('tamper').addEventListener('click', () => send('admin:tamper', {
 $('remine').addEventListener('click', () => send('admin:remine', { block: Number($('t-block').value) }, 'Re-minando…'));
 $('restore').addEventListener('click', () => send('admin:restore', undefined, 'Cadena restaurada'));
 
+// Votación: the form is filled once from the server so typing is not overwritten by later state pushes.
+let votingFilled = false;
+$('v-save').addEventListener('click', () => send('admin:voting-config', {
+  question: $('v-question').value,
+  options: $('v-options').value.split('\n').map((o) => o.trim()).filter(Boolean),
+}, 'Votación guardada'));
+$('v-open').addEventListener('click', () => send('admin:voting-open', undefined, 'Votación abierta'));
+$('v-close').addEventListener('click', () => send('admin:voting-close', undefined, 'Votación cerrada'));
+function renderVoting(s) {
+  const v = (s.contracts || []).find((c) => c.address === '0xVOTACION')?.view;
+  if (!v) return;
+  if (!votingFilled && v.question) {
+    votingFilled = true;
+    $('v-question').value = v.question;
+    $('v-options').value = v.options.join('\n');
+  }
+  $('v-state').textContent = v.open ? '· abierta' : '· cerrada';
+  $('v-counts').textContent = v.options.length ? v.options.map((o, i) => `${o}: ${v.counts[i]}`).join(' · ') : 'Sin configurar';
+}
+
+// Subasta: status is refreshed on every state push; the countdown ticks locally.
+$('a-open').addEventListener('click', () => send('admin:auction-open', {
+  item: $('a-item').value, seconds: Number($('a-seconds').value),
+}, 'Subasta abierta'));
+let auctionEnds = 0;
+function renderAuction(s) {
+  const v = (s.contracts || []).find((c) => c.address === '0xSUBASTA')?.view;
+  if (!v) return;
+  auctionEnds = v.open ? v.endsAt : 0;
+  $('a-open').disabled = v.open;
+  $('a-state').textContent = v.open ? '· abierta' : v.winner ? '· cerrada' : '· sin abrir';
+  $('a-info').textContent = v.winner
+    ? `Ganó ${v.winner.nick} con ${v.winner.amount} por "${v.item}"`
+    : v.item ? `"${v.item}" · oferta más alta: ${v.highest ? `${v.highest.nick} (${v.highest.amount})` : 'ninguna'}` : '';
+}
+setInterval(() => {
+  if (!auctionEnds) return;
+  const left = Math.max(0, Math.ceil((auctionEnds - Date.now()) / 1000));
+  $('a-state').textContent = left > 0 ? `· abierta · ${left}s` : '· cerrando…';
+}, 500);
+
+// Banco: toggle the wallet attack button, seed the bank, launch the attack from 0xHACKER.
+let attackEnabled = false;
+$('b-toggle').addEventListener('click', () => send('admin:attack-enabled', { enabled: !attackEnabled }, attackEnabled ? 'Botón de ataque oculto' : 'Botón de ataque habilitado'));
+$('b-seed').addEventListener('click', () => send('admin:bank-seed', { amount: Number($('b-amount').value) }, 'Depósito del sistema enviado'));
+$('b-attack').addEventListener('click', () => send('admin:attack', { amount: Number($('b-amount').value) }, 'Ataque enviado al mempool'));
+function renderBank(s) {
+  const bank = (s.contracts || []).find((c) => c.address === '0xBANCO')?.view;
+  const atk = (s.contracts || []).find((c) => c.address === '0xATACANTE')?.view;
+  if (!bank || !atk) return;
+  attackEnabled = atk.enabled;
+  $('b-toggle').textContent = attackEnabled ? 'Deshabilitar botón de ataque' : 'Habilitar botón de ataque';
+  $('b-state').textContent = attackEnabled ? '· ataque habilitado' : '· ataque oculto';
+  $('b-info').textContent = `Saldo del banco: ${bank.balance}` + (atk.lastLoot ? ` · último botín: ${atk.lastLoot} (${atk.rounds} reentradas)` : '');
+}
+
 function render(s) {
   if (!loggedIn) return;
   panelButtons.forEach((b) => b.classList.toggle('active', b.dataset.panel === s.panel));
@@ -147,6 +203,9 @@ function render(s) {
   $('difficulty').value = String(s.difficulty);
   $('interval').value = String(s.mineIntervalMs);
   renderTamper(s);
+  renderVoting(s);
+  renderAuction(s);
+  renderBank(s);
 }
 socket.on('state:full', render);
 socket.on('mine:start', () => { $('mining').hidden = false; $('remine-nonce').textContent = '0'; });

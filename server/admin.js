@@ -4,6 +4,10 @@ import { ADMIN_PASSWORD } from './config.js';
 import { state, events, createSystemTx, reset } from './state.js';
 import { setDifficulty, setMineInterval, startMiner, stopMiner, isMinerRunning, isMining, isTampered, mineNow } from './miner.js';
 import { tamper, remine, restore } from './tamper.js';
+import { configureVoting, setVotingOpen } from './contracts/voting.js';
+import { openAuction } from './contracts/auction.js';
+import { seedBank } from './contracts/bank.js';
+import { setAttackEnabled, launchAttack } from './contracts/attacker.js';
 
 export const PANELS = ['qr', 'red', 'votacion', 'subasta', 'banco'];
 const GIFT_AMOUNT = 50;
@@ -84,6 +88,19 @@ export function registerAdminHandlers(socket, ctx) {
     changed();
     return { ok: true, count: targets.length };
   });
+
+  // Voting contract (off-chain config, mutates storage directly).
+  const voting = (fn) => (p) => { const r = fn(p); if (r.ok) changed(); return r; };
+  command('voting-config', voting(configureVoting));
+  command('voting-open', voting(() => setVotingOpen(true)));
+  command('voting-close', voting(() => setVotingOpen(false)));
+
+  command('auction-open', (p) => { const r = openAuction(p); if (r.ok) changed(); return r; });
+
+  // Bank / attacker. Launch and seed push system txs into the mempool (state changes when they are mined).
+  command('attack-enabled', ({ enabled }) => { const r = setAttackEnabled(enabled); if (r.ok) changed(); return r; });
+  command('attack', ({ amount = 10 }) => { const r = launchAttack({ amount }); if (r.ok) changed(); return r; });
+  command('bank-seed', (p) => { const r = seedBank(p); if (r.ok) changed(); return r; });
 
   command('tamper', (p) => tamper(p));
   command('remine', (p) => remine(p));
